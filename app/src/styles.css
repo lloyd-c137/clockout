@@ -964,7 +964,7 @@ button { color: inherit; }
 .kind-temporary { --task-color: #d9a7f2; }
 
 .schedule-detail-grid {
-  grid-template-columns: 31% 45% 1fr;
+  grid-template-columns: 29% 41% 1fr;
 }
 
 .schedule-ledger { overflow: hidden; }
@@ -1478,6 +1478,81 @@ button { color: inherit; }
 .tomorrow-drop-tray.ready { background: #d8cedc; }
 .overflow-actions button { border-radius: 2px; }
 .money-row strong { font-family: "SFMono-Regular", Menlo, ui-monospace, monospace; }
+
+/* Make the employee's compensation the clearest piece of live status. */
+.schedule-detail-grid .right-column {
+  grid-template-rows: 320px auto;
+  gap: 12px;
+}
+.schedule-detail-grid .money-settings {
+  padding: 18px 20px;
+  background: linear-gradient(145deg, #fff7e2 0%, #f8efd7 68%, #f1e5c5 100%);
+}
+.schedule-detail-grid .money-settings h2 {
+  margin-bottom: 16px;
+  padding-bottom: 11px;
+  border-bottom: 2px dashed rgba(170, 141, 77, .48);
+  font-size: 16px;
+  letter-spacing: .04em;
+}
+.schedule-detail-grid .money-row {
+  align-items: center;
+  min-height: 30px;
+  margin-bottom: 12px;
+  color: #687878;
+  font-size: 12px;
+  font-weight: 700;
+}
+.schedule-detail-grid .money-row strong {
+  display: inline-block;
+  color: #a76d13;
+  font-size: 18px;
+  line-height: 1.1;
+  transform-origin: right center;
+  transition: transform 260ms cubic-bezier(.23, 1, .32, 1), opacity 180ms ease;
+  will-change: transform;
+}
+.schedule-detail-grid .money-row-primary {
+  align-items: flex-end;
+  margin-bottom: 16px;
+  padding: 8px 0 17px;
+  border-bottom: 1px solid rgba(170, 141, 77, .24);
+}
+.schedule-detail-grid .money-row-primary span { font-size: 14px; }
+.schedule-detail-grid .money-row-primary strong {
+  font-size: 32px;
+  letter-spacing: -.06em;
+}
+.schedule-detail-grid .money-row.extra {
+  min-height: 44px;
+  margin-bottom: 21px;
+  padding: 8px 11px;
+  background: rgba(112, 178, 113, .12);
+  box-shadow: inset 3px 0 0 #67a76e;
+}
+.schedule-detail-grid .money-row.extra strong {
+  color: #378044;
+  font-size: 23px;
+}
+.schedule-detail-grid .money-value-updating {
+  transform: translateY(-3px) scale(1.07);
+  opacity: .88;
+}
+.schedule-detail-grid .money-settings > .money-row:nth-last-child(-n + 2) {
+  margin-bottom: 15px;
+}
+.schedule-detail-grid .schedule-rules {
+  padding: 15px 17px;
+}
+.schedule-detail-grid .schedule-rules h2 { font-size: 13px; }
+.schedule-detail-grid .schedule-rules p { font-size: 10px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .schedule-detail-grid .money-row strong {
+    transition: none;
+    transform: none;
+  }
+}
 
 .task-modal {
   border-radius: 0;

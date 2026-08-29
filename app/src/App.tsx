@@ -169,6 +169,44 @@ function scheduleSignature(schedule: ScheduleTask[]) {
   return schedule.map((task) => `${task.id}:${task.day}:${task.durationSlots}`).join('|');
 }
 
+function AnimatedMoney(props: { value: number; prefix?: string; className?: string }) {
+  const [displayValue, setDisplayValue] = useState(props.value);
+  const displayValueRef = useRef(props.value);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    const targetValue = Math.max(0, props.value);
+    const startValue = displayValueRef.current;
+    if (Math.abs(targetValue - startValue) < 0.005) return;
+
+    const startTime = performance.now();
+    const duration = 420;
+    let frame = 0;
+    setIsUpdating(true);
+
+    const tick = (timestamp: number) => {
+      const progress = Math.min(1, (timestamp - startTime) / duration);
+      const easedProgress = 1 - Math.pow(1 - progress, 4);
+      const nextValue = startValue + (targetValue - startValue) * easedProgress;
+      displayValueRef.current = nextValue;
+      setDisplayValue(nextValue);
+      if (progress < 1) {
+        frame = requestAnimationFrame(tick);
+      } else {
+        displayValueRef.current = targetValue;
+        setDisplayValue(targetValue);
+        setIsUpdating(false);
+      }
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [props.value]);
+
+  const className = ['money-value', props.className, isUpdating ? 'money-value-updating' : ''].filter(Boolean).join(' ');
+  return <strong className={className}>{props.prefix || '¥'} {displayValue.toFixed(2)}</strong>;
+}
+
 export default function App() {
   const hostIsDesktop = Boolean(window.desktopWidget);
   const [mode, setMode] = useState<Mode>('mini');
@@ -993,8 +1031,8 @@ function DetailView(props: {
       <aside className="right-column">
         <section className="pixel-panel money-settings">
           <h2>工资与工时</h2>
-          <div className="money-row"><span>今日累计</span><strong>¥ {props.todayWage.toFixed(2)}</strong></div>
-          <div className="money-row extra"><span>额外补偿</span><strong>＋¥ {props.extraComp.toFixed(2)}</strong></div>
+          <div className="money-row money-row-primary"><span>今日累计</span><AnimatedMoney value={props.todayWage} /></div>
+          <div className="money-row extra"><span>额外补偿</span><AnimatedMoney value={props.extraComp} prefix="＋¥" /></div>
           <div className="money-row"><span>工作时间</span><strong>{props.settings.start}–{props.settings.end}</strong></div>
           <div className="money-row"><span>时薪</span><strong>¥ {props.settings.hourlyWage}</strong></div>
         </section>

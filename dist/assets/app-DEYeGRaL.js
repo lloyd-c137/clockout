@@ -1,0 +1,1 @@
+import{a as e,i as t,n,o as r,r as i}from"./styles-DtwCP3_6.js";var a=r(e(),1),o=t(),s=i();(0,o.createRoot)(document.getElementById(`root`)).render((0,s.jsx)(a.StrictMode,{children:(0,s.jsx)(n,{})}));
