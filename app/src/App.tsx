@@ -219,7 +219,6 @@ export default function App() {
   useEffect(() => {
     if (!dbReady) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(committedSchedule));
-    void window.desktopWidget?.saveTasks(committedSchedule);
   }, [committedSchedule, dbReady]);
   useEffect(() => localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)), [settings]);
   useEffect(() => localStorage.setItem(COMP_KEY, JSON.stringify(extraComp)), [extraComp]);
@@ -234,7 +233,6 @@ export default function App() {
   const activeSchedule = previewSchedule || committedSchedule;
   const todayPlan = useMemo(() => planDay(activeSchedule, 'today', currentSlot, currentSlot), [activeSchedule, currentSlot]);
   const committedPlan = useMemo(() => planDay(committedSchedule, 'today', currentSlot, currentSlot), [committedSchedule, currentSlot]);
-  const tomorrowPlan = useMemo(() => planDay(activeSchedule, 'tomorrow'), [activeSchedule]);
   const selectedTask = activeSchedule.find((task) => task.id === selectedTaskId) || null;
   const remainingSlots = committedSchedule
     .filter((task) => task.day === 'today' && task.status !== 'done')
@@ -569,13 +567,6 @@ export default function App() {
           plan={todayPlan}
           currentSlot={currentSlot}
           progress={progress}
-          selectedTask={selectedTask}
-          completingTaskId={completingTaskId}
-          dragUi={dragUi}
-          onSelectTask={setSelectedTaskId}
-          onDone={markDone}
-          onToggleLock={toggleLock}
-          onPointerDownTask={beginTaskPointer}
         />
         <aside className="board-score-column">
           <span className="score-label">距离下班</span>
@@ -588,7 +579,6 @@ export default function App() {
           <small>{new Date(now).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} · 剩余{remainingSlots}格</small>
         </aside>
       </div>
-      {pendingOverflow && <OverflowDecision pending={pendingOverflow} onResolve={resolveOverflow} />}
     </section>
   );
 
@@ -598,15 +588,9 @@ export default function App() {
     <main className={hostIsDesktop ? 'desktop-host' : 'web-stage'}>
       {mode === 'mini' ? miniWidget : mode === 'board' ? boardWidget : <DetailView
         schedule={activeSchedule}
-        committedPlan={committedPlan}
         todayPlan={todayPlan}
-        tomorrowPlan={tomorrowPlan}
         currentSlot={currentSlot}
         progress={progress}
-        selectedTask={selectedTask}
-        completingTaskId={completingTaskId}
-        dragUi={dragUi}
-        pendingOverflow={pendingOverflow}
         settings={settings}
         extraComp={extraComp}
         todayWage={todayWage}
@@ -614,19 +598,7 @@ export default function App() {
         onMini={() => void switchMode('mini')}
         onCollapse={() => void switchMode('board')}
         onQuit={quitApp}
-        onAdd={() => setShowTaskModal(true)}
-        onTemporary={requestTemporaryTask}
-        onSettings={setSettings}
-        onSelectTask={setSelectedTaskId}
-        onDone={markDone}
-        onToggleLock={toggleLock}
-        onSplit={splitTask}
-        onPointerDownTask={beginTaskPointer}
-        onResolveOverflow={resolveOverflow}
       />}
-      {dragUi?.active && <DragGhost task={activeSchedule.find((task) => task.id === dragUi.taskId)} x={dragUi.x} y={dragUi.y} valid={dragUi.valid} />}
-      {showTaskModal && <TaskModal onClose={() => setShowTaskModal(false)} onAdd={(task) => { addTask(task); setShowTaskModal(false); }} />}
-      {undoRecord && <div className="undo-toast"><span>{undoMessage}</span><button type="button" onClick={undo}>撤销</button></div>}
     </main>
   );
 }
@@ -635,13 +607,6 @@ function TaskBoard(props: {
   plan: DayPlan;
   currentSlot: number;
   progress: number;
-  selectedTask: ScheduleTask | null;
-  completingTaskId: string | null;
-  dragUi: DragUi | null;
-  onSelectTask: (id: string | null) => void;
-  onDone: (id: string) => void;
-  onToggleLock: (id: string) => void;
-  onPointerDownTask: (event: ReactPointerEvent, task: ScheduleTask) => void;
 }) {
   const pieces = props.plan.placements.flatMap((placement) => placement.visibleSlots.map((slot) => ({
     slot,
@@ -649,7 +614,7 @@ function TaskBoard(props: {
     task: placement.task,
     placement
   })));
-  const pieceRefs = useRef(new Map<string, HTMLButtonElement>());
+  const pieceRefs = useRef(new Map<string, HTMLElement>());
   const previousRects = useRef(new Map<string, DOMRect>());
 
   useLayoutEffect(() => {
@@ -658,7 +623,7 @@ function TaskBoard(props: {
       const next = element.getBoundingClientRect();
       nextRects.set(key, next);
       const previous = previousRects.current.get(key);
-      if (!previous || props.dragUi?.taskId === key.split(':')[0]) return;
+      if (!previous) return;
       const deltaX = previous.left - next.left;
       const deltaY = previous.top - next.top;
       if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
@@ -670,7 +635,7 @@ function TaskBoard(props: {
       });
     });
     previousRects.current = nextRects;
-  }, [props.plan, props.dragUi?.taskId]);
+  }, [props.plan]);
 
   return <div className="schedule-board-wrap">
     <div className="task-board schedule-board" aria-label="09:00到18:00的36格任务棋盘">
@@ -686,44 +651,27 @@ function TaskBoard(props: {
         {pieces.map(({ slot, offset, task, placement }) => {
           const key = `${task.id}:${offset}`;
           const implicitLocked = placement.startSlot < props.currentSlot || task.status === 'doing';
-          const isDragging = props.dragUi?.active && props.dragUi.taskId === task.id;
-          return <button
-            type="button"
+          return <div
             ref={(element) => { if (element) pieceRefs.current.set(key, element); else pieceRefs.current.delete(key); }}
             className={'board-cell filled kind-' + task.type +
-              (slot < props.currentSlot ? ' late' : '') +
-              (isDragging ? ' dragging-task' : '') +
-              (task.id === props.completingTaskId ? ' completing' : '')}
+              (slot < props.currentSlot ? ' late' : '')}
             style={{ gridColumn: slot % 6 + 1, gridRow: Math.floor(slot / 6) + 1 }}
-            data-slot={slot}
             data-task-id={task.id}
             key={key}
-            onPointerDown={(event) => props.onPointerDownTask(event, task)}
+            role="img"
             aria-label={`${task.title}，${task.durationSlots * 15}分钟`}
           >
             <span className="cell-icon"><TaskIcon type={task.type} /></span>
             {(task.locked || implicitLocked) && <span className="lock-mark" aria-hidden="true"><LockIcon /></span>}
             <span className="cell-hover-tip"><strong>{task.title}</strong><b>{task.durationSlots * 15}分钟 · {task.status === 'doing' ? '进行中' : '待开始'}</b></span>
-          </button>;
+          </div>;
         })}
-        {props.dragUi?.active && props.dragUi.originSlots.map((slot) => <span
-          className="drag-origin-placeholder"
-          style={{ gridColumn: slot % 6 + 1, gridRow: Math.floor(slot / 6) + 1 }}
-          key={'origin-' + slot}
-        />)}
       </div>
       <div className="elapsed-water" style={{ height: (props.progress * 100) + '%' }} />
       <svg className="water-wave" style={{ top: 'calc(' + (props.progress * 100) + '% - 5px)' }} viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
         <path d="M0 5 Q 12.5 1 25 5 T 50 5 T 75 5 T 100 5" />
       </svg>
       <span className="clock-marker" style={{ top: 'calc(' + (props.progress * 100) + '% - 9px)' }} aria-hidden="true"><TaskIcon type="waiting" /></span>
-      {props.selectedTask && <div className="task-peek" onPointerDown={(event) => event.stopPropagation()}>
-        <span className={'peek-dot kind-' + props.selectedTask.type} />
-        <span><strong>{props.selectedTask.title}</strong><small>{props.selectedTask.durationSlots * 15}分钟 · {props.selectedTask.day === 'today' ? '今天' : '明天'}</small></span>
-        {props.selectedTask.status !== 'done' && <button type="button" onClick={() => props.onDone(props.selectedTask!.id)}>完成</button>}
-        {props.selectedTask.day === 'today' && props.selectedTask.status === 'todo' && <button type="button" onClick={() => props.onToggleLock(props.selectedTask!.id)}>{props.selectedTask.locked ? '解锁' : '锁定'}</button>}
-        <button type="button" onClick={() => props.onSelectTask(null)}>×</button>
-      </div>}
     </div>
   </div>;
 }
@@ -971,15 +919,9 @@ export function AdminView(props: {
 
 function DetailView(props: {
   schedule: ScheduleTask[];
-  committedPlan: DayPlan;
   todayPlan: DayPlan;
-  tomorrowPlan: DayPlan;
   currentSlot: number;
   progress: number;
-  selectedTask: ScheduleTask | null;
-  completingTaskId: string | null;
-  dragUi: DragUi | null;
-  pendingOverflow: PendingOverflow | null;
   settings: Settings;
   extraComp: number;
   todayWage: number;
@@ -987,32 +929,23 @@ function DetailView(props: {
   onMini: () => void;
   onCollapse: () => void;
   onQuit: () => void;
-  onAdd: () => void;
-  onTemporary: () => void;
-  onSettings: (settings: Settings) => void;
-  onSelectTask: (id: string | null) => void;
-  onDone: (id: string) => void;
-  onToggleLock: (id: string) => void;
-  onSplit: (id: string) => void;
-  onPointerDownTask: (event: ReactPointerEvent, task: ScheduleTask) => void;
-  onResolveOverflow: (action: 'tomorrow' | 'resize' | 'replace' | 'overtime' | 'cancel') => void;
 }) {
   const todayTasks = props.schedule.filter((task) => task.day === 'today');
   const tomorrowTasks = props.schedule.filter((task) => task.day === 'tomorrow' && task.status !== 'done');
   return <section className="detail-shell">
     <header className="detail-header drag-surface">
       <div className="office-sign"><span><OfficeMark /></span><div><strong>clockout</strong><small>拖动的是完整任务，松手才保存排期</small></div></div>
-      <div className="header-actions no-drag"><button type="button" onClick={props.onTemporary}>老板临时加单</button><button type="button" onClick={props.onAdd}>＋新增任务</button><WindowControls mode="detail" onMini={props.onMini} onBoard={props.onCollapse} onDetail={() => {}} onQuit={props.onQuit} /></div>
+      <WindowControls mode="detail" onMini={props.onMini} onBoard={props.onCollapse} onDetail={() => {}} onQuit={props.onQuit} />
     </header>
     <div className="detail-grid schedule-detail-grid">
       <section className="pixel-panel ledger schedule-ledger">
         <h2>任务顺序 <b>{props.remainingSlots * 15} MIN</b></h2>
-        <p className="ledger-help">按住任务移动超过5px后，整项任务才会被提起。</p>
+        <p className="ledger-help">当前页面仅展示已发送的任务安排。</p>
         <div className="ledger-list">
           <h3>今天</h3>
-          {todayTasks.map((task) => <TaskLedgerRow task={task} key={task.id} plan={props.committedPlan} currentSlot={props.currentSlot} onPointerDown={props.onPointerDownTask} onDone={props.onDone} onSplit={props.onSplit} onToggleLock={props.onToggleLock} />)}
+          {todayTasks.map((task) => <TaskLedgerRow task={task} key={task.id} />)}
           <h3 className="tomorrow-heading">明天 <span>{tomorrowTasks.length}项</span></h3>
-          {tomorrowTasks.map((task) => <TaskLedgerRow task={task} key={task.id} plan={props.tomorrowPlan} currentSlot={0} onPointerDown={props.onPointerDownTask} onDone={props.onDone} onSplit={props.onSplit} onToggleLock={props.onToggleLock} />)}
+          {tomorrowTasks.map((task) => <TaskLedgerRow task={task} key={task.id} />)}
         </div>
       </section>
       <section className="center-column schedule-center-column">
@@ -1022,19 +955,8 @@ function DetailView(props: {
             plan={props.todayPlan}
             currentSlot={props.currentSlot}
             progress={props.progress}
-            selectedTask={props.selectedTask}
-            completingTaskId={props.completingTaskId}
-            dragUi={props.dragUi}
-            onSelectTask={props.onSelectTask}
-            onDone={props.onDone}
-            onToggleLock={props.onToggleLock}
-            onPointerDownTask={props.onPointerDownTask}
           />
           <OverflowPreview plan={props.todayPlan} />
-          <div className={'tomorrow-drop-tray ' + (props.dragUi?.active ? 'ready' : '') + (props.dragUi?.target === 'tomorrow' ? 'hovered' : '')} data-drop-zone="tomorrow">
-            <span>放到明天</span><small>拖到这里，今日任务会自动前移补位</small>
-          </div>
-          {props.pendingOverflow && <OverflowDecision pending={props.pendingOverflow} onResolve={props.onResolveOverflow} />}
         </div>
       </section>
       <aside className="right-column">
@@ -1042,9 +964,8 @@ function DetailView(props: {
           <h2>工资与工时</h2>
           <div className="money-row"><span>今日累计</span><strong>¥ {props.todayWage.toFixed(2)}</strong></div>
           <div className="money-row extra"><span>额外补偿</span><strong>＋¥ {props.extraComp.toFixed(2)}</strong></div>
-          <label>上班<input type="time" value={props.settings.start} onChange={(event) => props.onSettings({ ...props.settings, start: event.target.value })} /></label>
-          <label>下班<input type="time" value={props.settings.end} onChange={(event) => props.onSettings({ ...props.settings, end: event.target.value })} /></label>
-          <label>时薪<input type="number" value={props.settings.hourlyWage} onChange={(event) => props.onSettings({ ...props.settings, hourlyWage: Number(event.target.value) })} /></label>
+          <div className="money-row"><span>工作时间</span><strong>{props.settings.start}–{props.settings.end}</strong></div>
+          <div className="money-row"><span>时薪</span><strong>¥ {props.settings.hourlyWage}</strong></div>
         </section>
         <section className="pixel-panel schedule-rules">
           <h2>排期规则</h2>
@@ -1060,31 +981,13 @@ function DetailView(props: {
 
 function TaskLedgerRow(props: {
   task: ScheduleTask;
-  plan: DayPlan;
-  currentSlot: number;
-  onPointerDown: (event: ReactPointerEvent, task: ScheduleTask) => void;
-  onDone: (id: string) => void;
-  onSplit: (id: string) => void;
-  onToggleLock: (id: string) => void;
 }) {
-  const draggable = props.task.day === 'tomorrow'
-    ? props.task.status === 'todo' && !props.task.locked
-    : isTaskDraggable(props.task, props.plan, props.currentSlot);
   return <article
-    className={'ledger-row schedule-row kind-' + props.task.type + (props.task.status === 'done' ? ' done' : '') + (!draggable ? ' fixed' : '')}
+    className={'ledger-row schedule-row kind-' + props.task.type + (props.task.status === 'done' ? ' done' : '') + ' fixed'}
     data-task-id={props.task.id}
-    onPointerDown={(event) => {
-      if ((event.target as HTMLElement).closest('button')) return;
-      props.onPointerDown(event, props.task);
-    }}
   >
     <i><TaskIcon type={props.task.type} /></i>
     <div><strong>{props.task.title}</strong><span>{props.task.durationSlots}格 · {props.task.durationSlots * 15}分钟 · {props.task.deadline}</span></div>
     {props.task.locked && <span className="row-lock"><LockIcon />固定</span>}
-    {props.task.status !== 'done' && <div className="row-actions">
-      {!props.task.locked && props.task.durationSlots > 1 && <button type="button" onClick={() => props.onSplit(props.task.id)}>拆分</button>}
-      {props.task.day === 'today' && <button type="button" onClick={() => props.onToggleLock(props.task.id)}>{props.task.locked ? '解锁' : '锁定'}</button>}
-      <button type="button" onClick={() => props.onDone(props.task.id)}>完成</button>
-    </div>}
   </article>;
 }
