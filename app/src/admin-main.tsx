@@ -32,8 +32,15 @@ function AdminApp() {
   const [adminState, setAdminState] = useState<AdminState>({ confirmedAt: null, pendingMinutes: 0, overageAmount: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
+
+  useEffect(() => {
+    if (!success) return;
+    const timer = window.setTimeout(() => setSuccess(''), 5000);
+    return () => window.clearTimeout(timer);
+  }, [success]);
 
   const refresh = useCallback(async () => {
     try {
@@ -76,7 +83,9 @@ function AdminApp() {
       const response = await fetch('/api/admin/confirm', { method: 'POST' });
       if (!response.ok) throw new Error((await response.json() as { error?: string }).error || `确认失败（${response.status}）`);
       await refresh();
+      setSuccess('发送成功，任务已发送给员工。');
     } catch (cause) {
+      setSuccess('');
       setError(cause instanceof Error ? cause.message : '确认失败');
     }
   }, [refresh]);
@@ -88,7 +97,9 @@ function AdminApp() {
       const response = await fetch('/api/admin/pay-and-publish', { method: 'POST' });
       if (!response.ok) throw new Error((await response.json() as { error?: string }).error || `支付失败（${response.status}）`);
       await refresh();
+      setSuccess('支付成功，追加任务已发送给员工。');
     } catch (cause) {
+      setSuccess('');
       setError(cause instanceof Error ? cause.message : '支付失败');
     }
   }, [adminState.overageAmount, adminState.pendingMinutes, refresh]);
@@ -97,6 +108,7 @@ function AdminApp() {
 
   return <div className="admin-page">
     {error && <div className="admin-error" role="alert"><span>{error}</span><button type="button" onClick={() => void refresh()}>重新读取</button></div>}
+    {success && <div className="admin-success" role="status" aria-live="polite"><span>{success}</span><button type="button" aria-label="关闭成功提示" onClick={() => setSuccess('')}>×</button></div>}
     <AdminView
       tasks={tasks}
       currentSlot={getCurrentSlot()}
