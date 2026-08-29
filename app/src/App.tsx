@@ -16,7 +16,7 @@ import {
 
 type Mode = 'mini' | 'board' | 'detail';
 
-type Settings = {
+export type Settings = {
   start: string;
   end: string;
   hourlyWage: number;
@@ -244,9 +244,11 @@ export default function App() {
     void Promise.all([
       window.desktopWidget.loadTasks(),
       window.desktopWidget.hasAnyTasks(),
-      window.desktopWidget.loadWorkdayControl()
-    ]).then(([tasks, hasAnyTasks, workdayControl]) => {
+      window.desktopWidget.loadWorkdayControl(),
+      window.desktopWidget.loadSettings()
+    ]).then(([tasks, hasAnyTasks, workdayControl, persistedSettings]) => {
       if (!active) return;
+      setSettings(persistedSettings);
       setExtraComp(workdayControl.paidAmount);
       extraCompRef.current = workdayControl.paidAmount;
       if (tasks.length) {
@@ -302,6 +304,9 @@ export default function App() {
   useEffect(() => window.desktopWidget?.onWorkdayChanged((control) => {
     setExtraComp(control.paidAmount);
     extraCompRef.current = control.paidAmount;
+  }), []);
+  useEffect(() => window.desktopWidget?.onSettingsChanged((nextSettings) => {
+    setSettings(nextSettings);
   }), []);
 
   function showUndo(message: string, before: UndoRecord) {
@@ -641,7 +646,6 @@ export default function App() {
         todayPlan={todayPlan}
         currentSlot={currentSlot}
         progress={progress}
-        settings={settings}
         extraComp={extraComp}
         todayWage={todayWage}
         remainingSlots={remainingSlots}
@@ -873,6 +877,7 @@ function taskStatusLabel(status: TaskStatus) {
 
 export function AdminView(props: {
   tasks: ScheduleTask[];
+  settings: Settings;
   currentSlot: number;
   confirmedAt: number | null;
   pendingMinutes: number;
@@ -882,6 +887,7 @@ export function AdminView(props: {
   onDelete: (id: string) => void;
   onConfirm: () => void;
   onPayAndPublish: () => void;
+  onSettingsChange: (settings: Settings) => void | Promise<void>;
   onQuit?: () => void;
 }) {
   const [query, setQuery] = useState('');
@@ -890,6 +896,9 @@ export function AdminView(props: {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<AdminDraft>(EMPTY_ADMIN_DRAFT);
   const [submitting, setSubmitting] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState(props.settings);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState('');
   const [formError, setFormError] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
   const selectedTask = props.tasks.find((task) => task.id === editingId) || null;
@@ -898,6 +907,9 @@ export function AdminView(props: {
   useEffect(() => {
     setDraft(selectedTask ? taskToAdminDraft(selectedTask) : EMPTY_ADMIN_DRAFT);
   }, [editingId, selectedTask]);
+  useEffect(() => {
+    setSettingsDraft((current) => current.start === props.settings.start && current.end === props.settings.end && current.hourlyWage === props.settings.hourlyWage && current.overtimeRate === props.settings.overtimeRate ? current : props.settings);
+  }, [props.settings]);
 
   const filteredTasks = props.tasks.filter((task) => {
     const matchesQuery = !query.trim() || [task.title, task.assignee || ''].some((value) => value.toLowerCase().includes(query.trim().toLowerCase()));
@@ -953,6 +965,30 @@ export function AdminView(props: {
     setDraft(EMPTY_ADMIN_DRAFT);
   }
 
+  async function saveSettings(event: FormEvent) {
+    event.preventDefault();
+    if (settingsSaving) return;
+    if (clockMinutes(settingsDraft.start) >= clockMinutes(settingsDraft.end)) {
+      setSettingsError('上班时间必须早于下班时间。');
+      return;
+    }
+    if (settingsDraft.hourlyWage <= 0 || settingsDraft.overtimeRate <= 0) {
+      setSettingsError('时薪和超额费率必须大于 0。');
+      return;
+    }
+    setSettingsError('');
+    setSettingsSaving(true);
+    try {
+      await props.onSettingsChange({
+        ...settingsDraft,
+        hourlyWage: Number(settingsDraft.hourlyWage),
+        overtimeRate: Number(settingsDraft.overtimeRate)
+      });
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
   return <section className="admin-shell">
     <header className="admin-header drag-surface">
       <div className="admin-brand"><span className="admin-brand-mark"><OfficeMark /></span><div><strong>clockout · 管理后台</strong><small>把新增工作放进容量里，再决定谁来做、何时做</small></div></div>
@@ -972,6 +1008,16 @@ export function AdminView(props: {
           <button className={'admin-submit' + (!selectedTask && props.confirmedAt ? ' admin-submit-overage' : '')} type="submit" disabled={submitting}>{selectedTask ? '保存任务' : props.confirmedAt ? '添加超额任务并支付' : '加入排期'}</button>
           {selectedTask && <button className="admin-delete" type="button" onClick={deleteSelected}>删除任务</button>}
         </form>
+        <section className="admin-settings-card">
+          <div className="admin-settings-heading"><span className="section-kicker">后台配置</span><h3>工作设置</h3></div>
+          <form className="admin-settings-form" onSubmit={saveSettings}>
+            <div className="admin-form-grid"><label>上班时间<input type="time" value={settingsDraft.start} onChange={(event) => setSettingsDraft((current) => ({ ...current, start: event.target.value }))} /></label><label>下班时间<input type="time" value={settingsDraft.end} onChange={(event) => setSettingsDraft((current) => ({ ...current, end: event.target.value }))} /></label></div>
+            <div className="admin-form-grid"><label>时薪<input type="number" min="0.01" step="0.01" value={settingsDraft.hourlyWage} onChange={(event) => setSettingsDraft((current) => ({ ...current, hourlyWage: Number(event.target.value) }))} /></label><label>超额费率<input type="number" min="0.01" step="0.01" value={settingsDraft.overtimeRate} onChange={(event) => setSettingsDraft((current) => ({ ...current, overtimeRate: Number(event.target.value) }))} /></label></div>
+            {settingsError && <p className="admin-settings-error" role="alert">{settingsError}</p>}
+            <p className="admin-settings-note">员工工作台只显示实时收入，以上参数在此处统一配置。</p>
+            <button className="admin-settings-submit" type="submit" disabled={settingsSaving}>{settingsSaving ? '保存中…' : '保存工作设置'}</button>
+          </form>
+        </section>
       </aside>
       <main className="admin-main">
         <div className="admin-overview"><div><span>全部任务</span><strong>{props.tasks.length}</strong></div><div><span>待处理</span><strong>{openCount}</strong></div><div><span>进行中</span><strong>{doingCount}</strong></div><div className={todayPlan.overflowSlots ? 'is-warning' : ''}><span>今日容量</span><strong>{todayPlan.totalSlots}/36</strong></div></div>
@@ -990,7 +1036,6 @@ function DetailView(props: {
   todayPlan: DayPlan;
   currentSlot: number;
   progress: number;
-  settings: Settings;
   extraComp: number;
   todayWage: number;
   remainingSlots: number;
@@ -1029,11 +1074,10 @@ function DetailView(props: {
       </section>
       <aside className="right-column">
         <section className="pixel-panel money-settings">
-          <h2>工资与工时</h2>
+          <h2>实时收入</h2>
           <div className="money-row money-row-primary"><span>今日累计</span><AnimatedMoney value={props.todayWage} /></div>
           <div className="money-row extra"><span>额外补偿</span><AnimatedMoney value={props.extraComp} prefix="＋¥" /></div>
-          <div className="money-row"><span>工作时间</span><strong>{props.settings.start}–{props.settings.end}</strong></div>
-          <div className="money-row"><span>时薪</span><strong>¥ {props.settings.hourlyWage}</strong></div>
+          <p className="money-settings-note">收入按管理后台设置实时计算</p>
         </section>
         <section className="pixel-panel schedule-rules">
           <h2>排期规则</h2>

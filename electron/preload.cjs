@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('desktopWidget', {
   loadTasks: () => ipcRenderer.invoke('tasks:list'),
   hasAnyTasks: () => ipcRenderer.invoke('tasks:has-any'),
   loadWorkdayControl: () => ipcRenderer.invoke('workday:get-control'),
+  loadSettings: () => ipcRenderer.invoke('settings:get'),
   saveTasks: (tasks) => ipcRenderer.invoke('tasks:save', tasks),
   deleteTask: (taskId) => ipcRenderer.invoke('tasks:delete', taskId),
   onTasksChanged: (callback) => {
@@ -23,6 +24,11 @@ contextBridge.exposeInMainWorld('desktopWidget', {
     const listener = (_event, control) => callback(control);
     ipcRenderer.on('workday:changed', listener);
     return () => ipcRenderer.removeListener('workday:changed', listener);
+  },
+  onSettingsChanged: (callback) => {
+    const listener = (_event, settings) => callback(settings);
+    ipcRenderer.on('settings:changed', listener);
+    return () => ipcRenderer.removeListener('settings:changed', listener);
   },
   hideFor: (milliseconds) => ipcRenderer.send('window:hide-for', milliseconds),
   close: () => ipcRenderer.send('window:close'),

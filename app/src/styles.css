@@ -446,6 +446,17 @@ button { color: inherit; }
 .admin-form .admin-check { display: flex; flex-direction: row; align-items: center; gap: 8px; padding-top: 24px; }
 .admin-check input { width: 15px; height: 15px; accent-color: #4d9b8d; }
 .admin-form-note { margin: 4px 0 16px; color: #87979a; font-size: 10px; line-height: 1.55; }
+.admin-settings-card { margin-top: 24px; padding-top: 18px; border-top: 1px solid #e1ece8; }
+.admin-settings-heading h3 { margin: 0; color: #3d5358; font-size: 14px; }
+.admin-settings-form { margin-top: 14px; }
+.admin-settings-form label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; color: #6c7d80; font-size: 10px; font-weight: 600; }
+.admin-settings-form input { min-width: 0; padding: 9px 10px; border: 1px solid #d5e5e0; border-radius: 9px; outline: 0; background: #f7fbf9; color: #405459; font-size: 11px; }
+.admin-settings-form input:focus { border-color: #4d9b8d; box-shadow: 0 0 0 3px rgba(77,155,141,.16); }
+.admin-settings-note { margin: 4px 0 12px; color: #87979a; font-size: 9px; line-height: 1.5; }
+.admin-settings-error { margin: 2px 0 10px; color: #b33e43; font-size: 10px; line-height: 1.4; }
+.admin-settings-submit { width: 100%; padding: 9px; border: 0; border-radius: 9px; background: #e5f2ed; color: #397d6e; font-size: 10px; font-weight: 700; cursor: pointer; }
+.admin-settings-submit:hover { background: #d8ece5; }
+.admin-settings-submit:disabled { cursor: wait; opacity: .68; }
 .admin-submit, .admin-delete { width: 100%; padding: 11px; border: 0; border-radius: 9px; font-size: 11px; font-weight: 700; cursor: pointer; }
 .admin-submit:disabled { cursor: wait; opacity: .68; }
 .admin-submit { background: #4e9a8b; color: #fff; box-shadow: 0 3px 0 #347467; }
@@ -1536,9 +1547,6 @@ button { color: inherit; }
 .schedule-detail-grid .money-value-updating {
   transform: translateY(-3px) scale(1.07);
   opacity: .88;
-}
-.schedule-detail-grid .money-settings > .money-row:nth-last-child(-n + 2) {
-  margin-bottom: 15px;
 }
 .schedule-detail-grid .schedule-rules {
   padding: 15px 17px;

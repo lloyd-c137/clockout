@@ -11,6 +11,8 @@ const ADMIN_PORT = 50831;
 const SLOT_MINUTES = 15;
 const DEFAULT_HOURLY_WAGE = 60;
 const DEFAULT_OVERTIME_RATE = 1.5;
+const WORK_SETTINGS_KEY = 'work_settings_v1';
+const DEFAULT_WORK_SETTINGS = { start: '09:00', end: '18:00', hourlyWage: DEFAULT_HOURLY_WAGE, overtimeRate: DEFAULT_OVERTIME_RATE };
 let mainWindow;
 let tray;
 let trayMenu;
@@ -65,6 +67,7 @@ function initializeTaskDb() {
       value TEXT NOT NULL
     );
   `);
+  taskDb.prepare('INSERT OR IGNORE INTO app_meta (key, value) VALUES (?, ?)').run(WORK_SETTINGS_KEY, JSON.stringify(DEFAULT_WORK_SETTINGS));
   try {
     taskDb.exec('ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
   } catch (error) {
@@ -182,17 +185,66 @@ function broadcastWorkdayControl() {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('workday:changed', getWorkdayControl());
 }
 
+function broadcastSettings() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('settings:changed', getWorkSettings());
+}
+
 function currentWorkDate() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
-function overageAmount(slots) {
-  return slots * SLOT_MINUTES / 60 * DEFAULT_HOURLY_WAGE * DEFAULT_OVERTIME_RATE;
+function clockMinutes(value) {
+  const [hours, minutes] = String(value).split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function normalizeTime(value, fallback) {
+  const candidate = String(value || '');
+  if (!/^\d{2}:\d{2}$/.test(candidate)) return fallback;
+  const minutes = clockMinutes(candidate);
+  return minutes >= 0 && minutes <= 1439 ? candidate : fallback;
+}
+
+function normalizeWorkSettings(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const hourlyWage = Number(source.hourlyWage);
+  const overtimeRate = Number(source.overtimeRate);
+  return {
+    start: normalizeTime(source.start, DEFAULT_WORK_SETTINGS.start),
+    end: normalizeTime(source.end, DEFAULT_WORK_SETTINGS.end),
+    hourlyWage: Number.isFinite(hourlyWage) && hourlyWage > 0 ? Math.round(hourlyWage * 100) / 100 : DEFAULT_WORK_SETTINGS.hourlyWage,
+    overtimeRate: Number.isFinite(overtimeRate) && overtimeRate > 0 ? Math.round(overtimeRate * 100) / 100 : DEFAULT_WORK_SETTINGS.overtimeRate
+  };
+}
+
+function getWorkSettings() {
+  const row = taskDb?.prepare('SELECT value FROM app_meta WHERE key = ?').get(WORK_SETTINGS_KEY);
+  if (!row) return { ...DEFAULT_WORK_SETTINGS };
+  try {
+    return normalizeWorkSettings(JSON.parse(row.value));
+  } catch {
+    return { ...DEFAULT_WORK_SETTINGS };
+  }
+}
+
+function saveWorkSettings(value) {
+  const next = normalizeWorkSettings(value);
+  if (clockMinutes(next.start) >= clockMinutes(next.end)) throw new Error('上班时间必须早于下班时间');
+  taskDb.prepare(`INSERT INTO app_meta (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(WORK_SETTINGS_KEY, JSON.stringify(next));
+  broadcastSettings();
+  broadcastWorkdayControl();
+  return next;
+}
+
+function overageAmount(slots, settings = getWorkSettings()) {
+  return slots * SLOT_MINUTES / 60 * settings.hourlyWage * settings.overtimeRate;
 }
 
 function getWorkdayControl() {
   const workDate = currentWorkDate();
+  const settings = getWorkSettings();
   const row = taskDb?.prepare('SELECT * FROM workday_controls WHERE work_date = ?').get(workDate);
   const pendingTasks = listAllTasks().filter((task) => task.published === false);
   const pendingSlots = pendingTasks.reduce((sum, task) => sum + Math.max(1, Math.round(task.durationSlots)), 0);
@@ -204,9 +256,9 @@ function getWorkdayControl() {
     pendingCount: pendingTasks.length,
     pendingSlots,
     pendingMinutes: pendingSlots * SLOT_MINUTES,
-    overageAmount: overageAmount(pendingSlots),
-    hourlyWage: DEFAULT_HOURLY_WAGE,
-    overtimeRate: DEFAULT_OVERTIME_RATE
+    overageAmount: overageAmount(pendingSlots, settings),
+    hourlyWage: settings.hourlyWage,
+    overtimeRate: settings.overtimeRate
   };
 }
 
@@ -300,6 +352,19 @@ function startAdminServer() {
       }
       if (requestUrl.pathname === '/api/admin/state' && request.method === 'GET') {
         sendJson(response, 200, getWorkdayControl());
+        return;
+      }
+      if (requestUrl.pathname === '/api/admin/settings' && request.method === 'GET') {
+        sendJson(response, 200, getWorkSettings());
+        return;
+      }
+      if (requestUrl.pathname === '/api/admin/settings' && request.method === 'PUT') {
+        try {
+          const payload = await readRequestBody(request);
+          sendJson(response, 200, saveWorkSettings(payload.settings || payload));
+        } catch (error) {
+          sendJson(response, 400, { error: String(error.message || error) });
+        }
         return;
       }
       if (requestUrl.pathname === '/api/tasks' && request.method === 'PUT') {
@@ -602,6 +667,7 @@ ipcMain.handle('window:set-mode', (_event, requestedMode) => setWindowMode(reque
 ipcMain.handle('tasks:list', () => listPublishedTasks());
 ipcMain.handle('tasks:has-any', () => listAllTasks().length > 0);
 ipcMain.handle('workday:get-control', () => getWorkdayControl());
+ipcMain.handle('settings:get', () => getWorkSettings());
 ipcMain.handle('tasks:save', (_event, tasks) => {
   const saved = savePublishedTasks(tasks);
   broadcastTasks();

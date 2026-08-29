@@ -1,6 +1,6 @@
 import { StrictMode, useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AdminView } from './App';
+import { AdminView, Settings } from './App';
 import { ScheduleTask } from './scheduler';
 import './styles.css';
 
@@ -10,9 +10,10 @@ type AdminState = {
   overageAmount: number;
 };
 
-function getCurrentSlot() {
+function getCurrentSlot(start: string) {
   const now = new Date();
-  return Math.max(0, Math.min(36, Math.floor((now.getHours() * 60 + now.getMinutes() - 540) / 15)));
+  const [hours, minutes] = start.split(':').map(Number);
+  return Math.max(0, Math.min(36, Math.floor((now.getHours() * 60 + now.getMinutes() - (hours * 60 + minutes)) / 15)));
 }
 
 async function requestTasks() {
@@ -27,8 +28,15 @@ async function requestAdminState() {
   return response.json() as Promise<AdminState>;
 }
 
+async function requestSettings() {
+  const response = await fetch('/api/admin/settings', { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`工作设置读取失败（${response.status}）`);
+  return response.json() as Promise<Settings>;
+}
+
 function AdminApp() {
   const [tasks, setTasks] = useState<ScheduleTask[]>([]);
+  const [settings, setSettings] = useState<Settings>({ start: '09:00', end: '18:00', hourlyWage: 60, overtimeRate: 1.5 });
   const [adminState, setAdminState] = useState<AdminState>({ confirmedAt: null, pendingMinutes: 0, overageAmount: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -44,9 +52,10 @@ function AdminApp() {
 
   const refresh = useCallback(async () => {
     try {
-      const [next, state] = await Promise.all([requestTasks(), requestAdminState()]);
+      const [next, state, nextSettings] = await Promise.all([requestTasks(), requestAdminState(), requestSettings()]);
       setTasks(next);
       setAdminState(state);
+      setSettings(nextSettings);
       setError('');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '任务读取失败');
@@ -77,6 +86,23 @@ function AdminApp() {
       setError(cause instanceof Error ? cause.message : '任务保存失败');
       void refresh();
       return false;
+    }
+  }, [refresh]);
+
+  const saveSettings = useCallback(async (next: Settings) => {
+    try {
+      const response = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(next)
+      });
+      if (!response.ok) throw new Error((await response.json() as { error?: string }).error || `工作设置保存失败（${response.status}）`);
+      setSettings(await response.json() as Settings);
+      setError('');
+      setSuccess('工作设置已保存，员工工作台会同步更新。');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '工作设置保存失败');
+      void refresh();
     }
   }, [refresh]);
 
@@ -129,7 +155,8 @@ function AdminApp() {
     {success && <div className="admin-success" role="status" aria-live="polite"><span>{success}</span><button type="button" aria-label="关闭成功提示" onClick={() => setSuccess('')}>×</button></div>}
     <AdminView
       tasks={tasks}
-      currentSlot={getCurrentSlot()}
+      settings={settings}
+      currentSlot={getCurrentSlot(settings.start)}
       confirmedAt={adminState.confirmedAt}
       pendingMinutes={adminState.pendingMinutes}
       overageAmount={adminState.overageAmount}
@@ -138,6 +165,7 @@ function AdminApp() {
       onDelete={(taskId) => void saveTasks(tasksRef.current.filter((task) => task.id !== taskId))}
       onConfirm={() => void confirmTasks()}
       onPayAndPublish={() => void payAndPublish()}
+      onSettingsChange={saveSettings}
     />
   </div>;
 }
