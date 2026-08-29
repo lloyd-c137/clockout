@@ -205,9 +205,12 @@ export default function App() {
     let active = true;
     void Promise.all([
       window.desktopWidget.loadTasks(),
-      window.desktopWidget.hasAnyTasks()
-    ]).then(([tasks, hasAnyTasks]) => {
+      window.desktopWidget.hasAnyTasks(),
+      window.desktopWidget.loadWorkdayControl()
+    ]).then(([tasks, hasAnyTasks, workdayControl]) => {
       if (!active) return;
+      setExtraComp(workdayControl.paidAmount);
+      extraCompRef.current = workdayControl.paidAmount;
       if (tasks.length) {
         setCommittedSchedule(tasks);
         committedRef.current = tasks;
@@ -258,6 +261,10 @@ export default function App() {
     setCommittedSchedule(tasks);
     committedRef.current = tasks;
     updatePreview(null);
+  }), []);
+  useEffect(() => window.desktopWidget?.onWorkdayChanged((control) => {
+    setExtraComp(control.paidAmount);
+    extraCompRef.current = control.paidAmount;
   }), []);
 
   function showUndo(message: string, before: UndoRecord) {

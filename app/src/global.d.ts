@@ -11,9 +11,11 @@ declare global {
       onModeChanged: (callback: (mode: 'mini' | 'board' | 'detail') => void) => () => void;
       loadTasks: () => Promise<import('./scheduler').ScheduleTask[]>;
       hasAnyTasks: () => Promise<boolean>;
+      loadWorkdayControl: () => Promise<{ paidAmount: number }>;
       saveTasks: (tasks: import('./scheduler').ScheduleTask[]) => Promise<import('./scheduler').ScheduleTask[]>;
       deleteTask: (taskId: string) => Promise<import('./scheduler').ScheduleTask[]>;
       onTasksChanged: (callback: (tasks: import('./scheduler').ScheduleTask[]) => void) => () => void;
+      onWorkdayChanged: (callback: (control: { paidAmount: number }) => void) => () => void;
       hideFor: (milliseconds: number) => void;
       close: () => void;
       quit: () => void;

@@ -178,6 +178,10 @@ function broadcastTasks() {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed', listPublishedTasks());
 }
 
+function broadcastWorkdayControl() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('workday:changed', getWorkdayControl());
+}
+
 function currentWorkDate() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -221,6 +225,7 @@ function confirmPendingTasks() {
     throw error;
   }
   broadcastTasks();
+  broadcastWorkdayControl();
   return getWorkdayControl();
 }
 
@@ -242,6 +247,7 @@ function payAndPublishPendingTasks() {
     throw error;
   }
   broadcastTasks();
+  broadcastWorkdayControl();
   return getWorkdayControl();
 }
 
@@ -595,6 +601,7 @@ app.on('activate', () => {
 ipcMain.handle('window:set-mode', (_event, requestedMode) => setWindowMode(requestedMode));
 ipcMain.handle('tasks:list', () => listPublishedTasks());
 ipcMain.handle('tasks:has-any', () => listAllTasks().length > 0);
+ipcMain.handle('workday:get-control', () => getWorkdayControl());
 ipcMain.handle('tasks:save', (_event, tasks) => {
   const saved = savePublishedTasks(tasks);
   broadcastTasks();
