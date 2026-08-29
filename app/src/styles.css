@@ -1248,16 +1248,6 @@ button { color: inherit; }
   color: #f8e47b;
   -webkit-app-region: drag;
 }
-.mini-clock-shell::before {
-  content: '';
-  position: absolute;
-  left: 7px;
-  top: 11px;
-  bottom: 11px;
-  width: 4px;
-  background: #62c7a5;
-  box-shadow: 0 10px 0 #62c7a5, 0 20px 0 #62c7a5;
-}
 .mini-clock-shell > strong {
   position: relative;
   z-index: 2;
