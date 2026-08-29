@@ -7,6 +7,9 @@ const path = require('path');
 const MINI_SIZE = { width: 228, height: 60 };
 const BOARD_SIZE = { width: 520, height: 320 };
 const DETAIL_SIZE = { width: 1040, height: 720 };
+const SLOT_MINUTES = 15;
+const DEFAULT_HOURLY_WAGE = 60;
+const DEFAULT_OVERTIME_RATE = 1.5;
 let mainWindow;
 let tray;
 let trayMenu;
@@ -38,12 +41,32 @@ function initializeTaskDb() {
       assignee TEXT NOT NULL DEFAULT '员工',
       priority INTEGER NOT NULL DEFAULT 3,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      published INTEGER NOT NULL DEFAULT 1,
       created_at REAL NOT NULL,
       updated_at REAL NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS workday_controls (
+      work_date TEXT PRIMARY KEY,
+      confirmed_at REAL,
+      paid_slots INTEGER NOT NULL DEFAULT 0,
+      paid_amount REAL NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS overage_payments (
+      id TEXT PRIMARY KEY,
+      work_date TEXT NOT NULL,
+      task_count INTEGER NOT NULL,
+      slots INTEGER NOT NULL,
+      amount REAL NOT NULL,
+      paid_at REAL NOT NULL
     );
   `);
   try {
     taskDb.exec('ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+  } catch (error) {
+    if (!String(error.message || error).includes('duplicate column name')) throw error;
+  }
+  try {
+    taskDb.exec('ALTER TABLE tasks ADD COLUMN published INTEGER NOT NULL DEFAULT 1');
   } catch (error) {
     if (!String(error.message || error).includes('duplicate column name')) throw error;
   }
@@ -64,28 +87,34 @@ function taskFromRow(row) {
     deadline: row.deadline || undefined,
     assignee: row.assignee || '员工',
     priority: Math.max(1, Math.min(5, Number(row.priority) || 3)),
+    published: Boolean(row.published),
     createdAt: Number(row.created_at) || Date.now()
   };
 }
 
-function listTasks() {
+function listAllTasks() {
   return taskDb ? taskDb.prepare('SELECT * FROM tasks ORDER BY day ASC, sort_order ASC, created_at ASC').all().map(taskFromRow) : [];
 }
 
-function saveTasks(tasks) {
+function listPublishedTasks() {
+  return listAllTasks().filter((task) => task.published !== false);
+}
+
+function saveAllTasks(tasks) {
   if (!taskDb) return [];
   const now = Date.now();
   const insert = taskDb.prepare(`
     INSERT INTO tasks (
       id, title, duration_slots, type, status, locked, day, fixed_start_slot,
-      actual_slots, deadline, assignee, priority, sort_order, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      actual_slots, deadline, assignee, priority, sort_order, published, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       title = excluded.title, duration_slots = excluded.duration_slots,
       type = excluded.type, status = excluded.status, locked = excluded.locked,
       day = excluded.day, fixed_start_slot = excluded.fixed_start_slot,
       actual_slots = excluded.actual_slots, deadline = excluded.deadline,
       assignee = excluded.assignee, priority = excluded.priority, sort_order = excluded.sort_order,
+      published = excluded.published,
       updated_at = excluded.updated_at
   `);
   taskDb.exec('BEGIN');
@@ -100,26 +129,100 @@ function saveTasks(tasks) {
         task.day === 'tomorrow' ? 'tomorrow' : 'today', Number.isFinite(task.fixedStartSlot) ? Math.round(task.fixedStartSlot) : null,
         Math.max(0, Math.round(Number(task.actualSlots) || 0)), task.deadline ? String(task.deadline) : null,
         task.assignee ? String(task.assignee) : '员工', Math.max(1, Math.min(5, Math.round(Number(task.priority) || 3))), sortOrder,
+        task.published === false ? 0 : 1,
         Number(task.createdAt) || now, now
       );
     }
     const remove = taskDb.prepare('DELETE FROM tasks WHERE id = ?');
-    for (const task of listTasks()) if (!ids.has(task.id)) remove.run(task.id);
+    for (const task of listAllTasks()) if (!ids.has(task.id)) remove.run(task.id);
     taskDb.exec('COMMIT');
   } catch (error) {
     taskDb.exec('ROLLBACK');
     throw error;
   }
-  return listTasks();
+  return listAllTasks();
+}
+
+function savePublishedTasks(tasks) {
+  const published = (Array.isArray(tasks) ? tasks : []).map((task) => ({ ...task, published: true }));
+  saveAllTasks([...listAllTasks().filter((task) => task.published === false), ...published]);
+  return listPublishedTasks();
 }
 
 function deleteTask(taskId) {
   if (taskDb && typeof taskId === 'string') taskDb.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
-  return listTasks();
+  return listPublishedTasks();
 }
 
 function broadcastTasks() {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed', listTasks());
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed', listPublishedTasks());
+}
+
+function currentWorkDate() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function overageAmount(slots) {
+  return slots * SLOT_MINUTES / 60 * DEFAULT_HOURLY_WAGE * DEFAULT_OVERTIME_RATE;
+}
+
+function getWorkdayControl() {
+  const workDate = currentWorkDate();
+  const row = taskDb?.prepare('SELECT * FROM workday_controls WHERE work_date = ?').get(workDate);
+  const pendingTasks = listAllTasks().filter((task) => task.published === false);
+  const pendingSlots = pendingTasks.reduce((sum, task) => sum + Math.max(1, Math.round(task.durationSlots)), 0);
+  return {
+    workDate,
+    confirmedAt: row?.confirmed_at ? Number(row.confirmed_at) : null,
+    paidSlots: Number(row?.paid_slots) || 0,
+    paidAmount: Number(row?.paid_amount) || 0,
+    pendingCount: pendingTasks.length,
+    pendingSlots,
+    pendingMinutes: pendingSlots * SLOT_MINUTES,
+    overageAmount: overageAmount(pendingSlots),
+    hourlyWage: DEFAULT_HOURLY_WAGE,
+    overtimeRate: DEFAULT_OVERTIME_RATE
+  };
+}
+
+function confirmPendingTasks() {
+  const control = getWorkdayControl();
+  if (control.confirmedAt) throw new Error('今日任务已经确认，新增任务需要支付超额费用');
+  const now = Date.now();
+  taskDb.exec('BEGIN');
+  try {
+    taskDb.prepare('UPDATE tasks SET published = 1, updated_at = ? WHERE published = 0').run(now);
+    taskDb.prepare(`INSERT INTO workday_controls (work_date, confirmed_at) VALUES (?, ?)
+      ON CONFLICT(work_date) DO UPDATE SET confirmed_at = excluded.confirmed_at`).run(control.workDate, now);
+    taskDb.exec('COMMIT');
+  } catch (error) {
+    taskDb.exec('ROLLBACK');
+    throw error;
+  }
+  broadcastTasks();
+  return getWorkdayControl();
+}
+
+function payAndPublishPendingTasks() {
+  const control = getWorkdayControl();
+  if (!control.confirmedAt) throw new Error('请先确认今日任务');
+  if (!control.pendingCount) return control;
+  const now = Date.now();
+  const amount = overageAmount(control.pendingSlots);
+  taskDb.exec('BEGIN');
+  try {
+    taskDb.prepare('UPDATE tasks SET published = 1, updated_at = ? WHERE published = 0').run(now);
+    taskDb.prepare(`INSERT INTO workday_controls (work_date, confirmed_at, paid_slots, paid_amount) VALUES (?, ?, ?, ?)
+      ON CONFLICT(work_date) DO UPDATE SET paid_slots = workday_controls.paid_slots + excluded.paid_slots, paid_amount = workday_controls.paid_amount + excluded.paid_amount`).run(control.workDate, control.confirmedAt, control.pendingSlots, amount);
+    taskDb.prepare('INSERT INTO overage_payments (id, work_date, task_count, slots, amount, paid_at) VALUES (?, ?, ?, ?, ?, ?)').run(`payment-${now}-${Math.random().toString(36).slice(2, 8)}`, control.workDate, control.pendingCount, control.pendingSlots, amount, now);
+    taskDb.exec('COMMIT');
+  } catch (error) {
+    taskDb.exec('ROLLBACK');
+    throw error;
+  }
+  broadcastTasks();
+  return getWorkdayControl();
 }
 
 function sendJson(response, status, payload) {
@@ -166,17 +269,37 @@ function startAdminServer() {
     const server = http.createServer(async (request, response) => {
       const requestUrl = new URL(request.url || '/', 'http://127.0.0.1');
       if (requestUrl.pathname === '/api/tasks' && request.method === 'GET') {
-        sendJson(response, 200, listTasks());
+        sendJson(response, 200, listAllTasks());
+        return;
+      }
+      if (requestUrl.pathname === '/api/admin/state' && request.method === 'GET') {
+        sendJson(response, 200, getWorkdayControl());
         return;
       }
       if (requestUrl.pathname === '/api/tasks' && request.method === 'PUT') {
         try {
           const payload = await readRequestBody(request);
-          const saved = saveTasks(Array.isArray(payload) ? payload : payload.tasks);
+          const saved = saveAllTasks(Array.isArray(payload) ? payload : payload.tasks);
           broadcastTasks();
           sendJson(response, 200, saved);
         } catch (error) {
           sendJson(response, 400, { error: String(error.message || error) });
+        }
+        return;
+      }
+      if (requestUrl.pathname === '/api/admin/confirm' && request.method === 'POST') {
+        try {
+          sendJson(response, 200, confirmPendingTasks());
+        } catch (error) {
+          sendJson(response, 409, { error: String(error.message || error) });
+        }
+        return;
+      }
+      if (requestUrl.pathname === '/api/admin/pay-and-publish' && request.method === 'POST') {
+        try {
+          sendJson(response, 200, payAndPublishPendingTasks());
+        } catch (error) {
+          sendJson(response, 409, { error: String(error.message || error) });
         }
         return;
       }
@@ -451,9 +574,9 @@ app.on('activate', () => {
 
 ipcMain.handle('window:set-mode', (_event, requestedMode) => setWindowMode(requestedMode));
 ipcMain.handle('admin:open', () => openAdminPage());
-ipcMain.handle('tasks:list', () => listTasks());
+ipcMain.handle('tasks:list', () => listPublishedTasks());
 ipcMain.handle('tasks:save', (_event, tasks) => {
-  const saved = saveTasks(tasks);
+  const saved = savePublishedTasks(tasks);
   broadcastTasks();
   return saved;
 });

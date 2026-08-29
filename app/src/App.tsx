@@ -100,6 +100,7 @@ function makeTask(
     deadline: '17:00',
     assignee: '员工',
     priority: 3,
+    published: true,
     createdAt: Date.now() + Math.random(),
     ...options
   };
@@ -876,10 +877,15 @@ function taskStatusLabel(status: TaskStatus) {
 export function AdminView(props: {
   tasks: ScheduleTask[];
   currentSlot: number;
+  confirmedAt: number | null;
+  pendingMinutes: number;
+  overageAmount: number;
   onBack: () => void;
   onAdd: (task: ScheduleTask) => void;
   onUpdate: (task: ScheduleTask) => void;
   onDelete: (id: string) => void;
+  onConfirm: () => void;
+  onPayAndPublish: () => void;
   onQuit?: () => void;
 }) {
   const [query, setQuery] = useState('');
@@ -888,6 +894,7 @@ export function AdminView(props: {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<AdminDraft>(EMPTY_ADMIN_DRAFT);
   const selectedTask = props.tasks.find((task) => task.id === editingId) || null;
+  const pendingTasks = props.tasks.filter((task) => task.published === false);
 
   useEffect(() => {
     setDraft(selectedTask ? taskToAdminDraft(selectedTask) : EMPTY_ADMIN_DRAFT);
@@ -936,7 +943,7 @@ export function AdminView(props: {
   return <section className="admin-shell">
     <header className="admin-header drag-surface">
       <div className="admin-brand"><span className="admin-brand-mark"><OfficeMark /></span><div><strong>clockout · 管理后台</strong><small>把新增工作放进容量里，再决定谁来做、何时做</small></div></div>
-      <div className="admin-header-actions no-drag"><button type="button" onClick={props.onBack}>回到工作台</button>{props.onQuit && <button type="button" className="admin-quit" onClick={props.onQuit}>退出</button>}</div>
+      <div className="admin-header-actions no-drag">{pendingTasks.length > 0 && <button type="button" className={props.confirmedAt ? 'admin-pay' : 'admin-confirm'} onClick={props.confirmedAt ? props.onPayAndPublish : props.onConfirm}>{props.confirmedAt ? `支付 ¥${props.overageAmount.toFixed(2)} 并发送` : `确认发送 ${pendingTasks.length} 项`}</button>}<button type="button" onClick={props.onBack}>回到工作台</button>{props.onQuit && <button type="button" className="admin-quit" onClick={props.onQuit}>退出</button>}</div>
     </header>
     <div className="admin-body">
       <aside className="admin-intake pixel-panel">
@@ -947,7 +954,7 @@ export function AdminView(props: {
           <div className="admin-form-grid"><label>安排日期<select value={draft.day} onChange={(event) => updateDraft('day', event.target.value as TaskDay)}><option value="today">今天</option><option value="tomorrow">明天</option></select></label><label>截止时间<input type="time" value={draft.deadline} onChange={(event) => updateDraft('deadline', event.target.value)} /></label></div>
           <div className="admin-form-grid"><label>负责人<input value={draft.assignee} onChange={(event) => updateDraft('assignee', event.target.value)} placeholder="员工" /></label><label>优先级<select value={draft.priority} onChange={(event) => updateDraft('priority', Number(event.target.value))}>{[1, 2, 3, 4, 5].map((priority) => <option value={priority} key={priority}>{priority} · {priority <= 2 ? '高' : priority === 3 ? '中' : '低'}</option>)}</select></label></div>
           {selectedTask && <div className="admin-form-grid"><label>状态<select value={draft.status} onChange={(event) => updateDraft('status', event.target.value as TaskStatus)}><option value="todo">待处理</option><option value="doing">进行中</option><option value="done">已完成</option></select></label><label className="admin-check"><input type="checkbox" checked={draft.locked} onChange={(event) => updateDraft('locked', event.target.checked)} />锁定时间</label></div>}
-          <p className="admin-form-note">今天安排共 {todayMinutes} 分钟，棋盘剩余 {Math.max(0, 36 - todayPlan.totalSlots)} 格{todayPlan.overflowSlots ? '，当前已超出容量' : ''}。</p>
+          <p className="admin-form-note">今天安排共 {todayMinutes} 分钟，棋盘剩余 {Math.max(0, 36 - todayPlan.totalSlots)} 格{todayPlan.overflowSlots ? '，当前已超出容量' : ''}。{props.confirmedAt ? '今日已确认，新增任务需支付超额费用后发送。' : '点击确认发送前，员工不会看到待确认任务。'}</p>
           <button className="admin-submit" type="submit">{selectedTask ? '保存任务' : '加入排期'}</button>
           {selectedTask && <button className="admin-delete" type="button" onClick={deleteSelected}>删除任务</button>}
         </form>
@@ -957,7 +964,7 @@ export function AdminView(props: {
         <section className="admin-task-panel pixel-panel">
           <div className="admin-list-toolbar"><div><span className="section-kicker">任务清单</span><h2>安排与进度</h2></div><div className="admin-filters"><input aria-label="搜索任务或负责人" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索任务或负责人" /><select aria-label="按状态筛选" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | TaskStatus)}><option value="all">全部状态</option><option value="todo">待处理</option><option value="doing">进行中</option><option value="done">已完成</option></select><select aria-label="按日期筛选" value={dayFilter} onChange={(event) => setDayFilter(event.target.value as 'all' | TaskDay)}><option value="all">全部日期</option><option value="today">今天</option><option value="tomorrow">明天</option></select></div></div>
           <div className="admin-list-head"><span /><span>任务</span><span>负责人</span><span>安排</span><span>状态</span><span>优先级</span><span /></div>
-          <div className="admin-task-list">{filteredTasks.length ? filteredTasks.map((task) => <article className={'admin-task-row ' + (task.id === editingId ? 'selected' : '')} key={task.id} onClick={() => selectTask(task)} onKeyDown={(event) => { if (event.key === 'Enter') selectTask(task); }} tabIndex={0}><span className={'admin-task-icon kind-' + task.type}><TaskIcon type={task.type} /></span><div className="admin-task-title"><strong>{task.title}</strong><small>{task.durationSlots * 15}分钟 · 截止 {task.deadline || '未设置'}{task.locked ? ' · 已锁定' : ''}</small></div><span className="admin-assignee">{task.assignee || '员工'}</span><span className="admin-day">{task.day === 'today' ? '今天' : '明天'}</span><button type="button" className={'admin-status status-' + task.status} onClick={(event) => { event.stopPropagation(); props.onUpdate({ ...task, status: task.status === 'todo' ? 'doing' : task.status === 'doing' ? 'done' : 'todo', actualSlots: task.status === 'doing' ? task.durationSlots : task.actualSlots }); }}>{taskStatusLabel(task.status)}</button><span className={'priority priority-' + (task.priority || 3)}>{task.priority || 3}</span><button type="button" className="admin-edit" onClick={(event) => { event.stopPropagation(); selectTask(task); }}>编辑</button></article>) : <div className="admin-empty"><strong>没有符合条件的任务</strong><span>调整筛选条件，或从左侧新增一项任务。</span></div>}</div>
+          <div className="admin-task-list">{filteredTasks.length ? filteredTasks.map((task) => <article className={'admin-task-row ' + (task.id === editingId ? 'selected' : '')} key={task.id} onClick={() => selectTask(task)} onKeyDown={(event) => { if (event.key === 'Enter') selectTask(task); }} tabIndex={0}><span className={'admin-task-icon kind-' + task.type}><TaskIcon type={task.type} /></span><div className="admin-task-title"><strong>{task.title}</strong><small>{task.durationSlots * 15}分钟 · 截止 {task.deadline || '未设置'}{task.locked ? ' · 已锁定' : ''} · <em className={task.published === false ? 'admin-pending-label' : 'admin-published-label'}>{task.published === false ? '待确认' : '已发送'}</em></small></div><span className="admin-assignee">{task.assignee || '员工'}</span><span className="admin-day">{task.day === 'today' ? '今天' : '明天'}</span><button type="button" className={'admin-status status-' + task.status} onClick={(event) => { event.stopPropagation(); props.onUpdate({ ...task, status: task.status === 'todo' ? 'doing' : task.status === 'doing' ? 'done' : 'todo', actualSlots: task.status === 'doing' ? task.durationSlots : task.actualSlots }); }}>{taskStatusLabel(task.status)}</button><span className={'priority priority-' + (task.priority || 3)}>{task.priority || 3}</span><button type="button" className="admin-edit" onClick={(event) => { event.stopPropagation(); selectTask(task); }}>编辑</button></article>) : <div className="admin-empty"><strong>没有符合条件的任务</strong><span>调整筛选条件，或从左侧新增一项任务。</span></div>}</div>
         </section>
       </main>
     </div>

@@ -15,6 +15,7 @@ export type ScheduleTask = {
   deadline?: string;
   assignee?: string;
   priority?: number;
+  published?: boolean;
   createdAt?: number;
 };
 
