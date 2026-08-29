@@ -1,20 +1,22 @@
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, shell } = require('electron');
 const { DatabaseSync } = require('node:sqlite');
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
 const MINI_SIZE = { width: 228, height: 60 };
 const BOARD_SIZE = { width: 520, height: 320 };
 const DETAIL_SIZE = { width: 1040, height: 720 };
-const ADMIN_SIZE = { width: 1180, height: 780 };
 let mainWindow;
 let tray;
 let trayMenu;
+let adminServer;
+let adminPort;
 let saveTimer;
 let statePath;
 let taskDb;
 let isQuitting = false;
-let savedState = { miniBounds: null, boardBounds: null, detailBounds: null, adminBounds: null, pinned: true, mode: 'mini' };
+let savedState = { miniBounds: null, boardBounds: null, detailBounds: null, pinned: true, mode: 'mini' };
 
 function initializeTaskDb() {
   const dbPath = path.join(app.getPath('userData'), 'clockout.sqlite');
@@ -120,6 +122,93 @@ function broadcastTasks() {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed', listTasks());
 }
 
+function sendJson(response, status, payload) {
+  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  response.end(JSON.stringify(payload));
+}
+
+function readRequestBody(request) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    request.setEncoding('utf8');
+    request.on('data', (chunk) => { body += chunk; });
+    request.on('end', () => {
+      try { resolve(body ? JSON.parse(body) : {}); } catch (error) { reject(error); }
+    });
+    request.on('error', reject);
+  });
+}
+
+function serveAdminFile(response, pathname) {
+  const relativePath = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
+  const staticRoot = path.resolve(__dirname, '../dist');
+  const target = path.resolve(staticRoot, relativePath);
+  if (target !== staticRoot && !target.startsWith(staticRoot + path.sep)) {
+    response.writeHead(403);
+    response.end('Forbidden');
+    return;
+  }
+  const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
+  fs.readFile(target, (error, content) => {
+    if (error) {
+      response.writeHead(error.code === 'ENOENT' ? 404 : 500);
+      response.end(error.code === 'ENOENT' ? 'Not Found' : 'Internal Server Error');
+      return;
+    }
+    response.writeHead(200, { 'Content-Type': types[path.extname(target)] || 'application/octet-stream', 'Cache-Control': pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-store' });
+    response.end(content);
+  });
+}
+
+function startAdminServer() {
+  if (adminServer && adminPort) return Promise.resolve(adminPort);
+  return new Promise((resolve, reject) => {
+    const server = http.createServer(async (request, response) => {
+      const requestUrl = new URL(request.url || '/', 'http://127.0.0.1');
+      if (requestUrl.pathname === '/api/tasks' && request.method === 'GET') {
+        sendJson(response, 200, listTasks());
+        return;
+      }
+      if (requestUrl.pathname === '/api/tasks' && request.method === 'PUT') {
+        try {
+          const payload = await readRequestBody(request);
+          const saved = saveTasks(Array.isArray(payload) ? payload : payload.tasks);
+          broadcastTasks();
+          sendJson(response, 200, saved);
+        } catch (error) {
+          sendJson(response, 400, { error: String(error.message || error) });
+        }
+        return;
+      }
+      if (requestUrl.pathname.startsWith('/api/tasks/') && request.method === 'DELETE') {
+        const taskId = decodeURIComponent(requestUrl.pathname.slice('/api/tasks/'.length));
+        sendJson(response, 200, deleteTask(taskId));
+        broadcastTasks();
+        return;
+      }
+      if (request.method !== 'GET') {
+        sendJson(response, 405, { error: 'Method not allowed' });
+        return;
+      }
+      serveAdminFile(response, requestUrl.pathname);
+    });
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      adminServer = server;
+      adminPort = server.address().port;
+      console.log('[admin]', JSON.stringify({ url: `http://127.0.0.1:${adminPort}/admin.html`, ready: true }));
+      resolve(adminPort);
+    });
+  });
+}
+
+async function openAdminPage() {
+  const port = await startAdminServer();
+  const url = `http://127.0.0.1:${port}/admin.html`;
+  await shell.openExternal(url);
+  return url;
+}
+
 function readState() {
   statePath = path.join(app.getPath('userData'), 'window-state.json');
   try {
@@ -143,8 +232,7 @@ function scheduleSave() {
   saveTimer = setTimeout(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const bounds = mainWindow.getBounds();
-    if (savedState.mode === 'admin') savedState.adminBounds = bounds;
-    else if (savedState.mode === 'detail') savedState.detailBounds = bounds;
+    if (savedState.mode === 'detail') savedState.detailBounds = bounds;
     else if (savedState.mode === 'board') savedState.boardBounds = bounds;
     else savedState.miniBounds = bounds;
     fs.writeFileSync(statePath, JSON.stringify(savedState, null, 2));
@@ -174,19 +262,9 @@ function positionUnderTray() {
 function setWindowMode(requestedMode, showWindow = true) {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   const current = mainWindow.getBounds();
-  savedState.mode = requestedMode === 'admin' ? 'admin' : requestedMode === 'detail' ? 'detail' : requestedMode === 'board' ? 'board' : 'mini';
+  savedState.mode = requestedMode === 'detail' ? 'detail' : requestedMode === 'board' ? 'board' : 'mini';
 
-  if (savedState.mode === 'admin') {
-    mainWindow.setResizable(true);
-    mainWindow.setMaximumSize(1600, 1100);
-    mainWindow.setMinimumSize(980, 650);
-    const target = clampBounds(savedState.adminBounds || {
-      x: current.x + current.width - ADMIN_SIZE.width,
-      y: current.y,
-      ...ADMIN_SIZE
-    });
-    mainWindow.setBounds(target, true);
-  } else if (savedState.mode === 'detail') {
+  if (savedState.mode === 'detail') {
     mainWindow.setResizable(true);
     mainWindow.setMaximumSize(1600, 1100);
     mainWindow.setMinimumSize(820, 600);
@@ -284,7 +362,7 @@ function createTray() {
   trayMenu = Menu.buildFromTemplate([
     { label: '打开任务棋盘', click: () => setWindowMode('board') },
     { label: '打开详细界面', click: () => setWindowMode('detail') },
-    { label: '打开老板管理后台', click: () => setWindowMode('admin') },
+    { label: '打开管理后台', click: () => void openAdminPage() },
     { label: '显示／隐藏倒计时', click: toggleTrayWindow },
     { type: 'separator' },
     {
@@ -357,13 +435,14 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   initializeTaskDb();
+  await startAdminServer();
   createWindow();
   createTray();
   setWindowMode('mini');
 });
-app.on('before-quit', () => { isQuitting = true; });
+app.on('before-quit', () => { isQuitting = true; if (adminServer) adminServer.close(); if (taskDb) taskDb.close(); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -371,6 +450,7 @@ app.on('activate', () => {
 });
 
 ipcMain.handle('window:set-mode', (_event, requestedMode) => setWindowMode(requestedMode));
+ipcMain.handle('admin:open', () => openAdminPage());
 ipcMain.handle('tasks:list', () => listTasks());
 ipcMain.handle('tasks:save', (_event, tasks) => {
   const saved = saveTasks(tasks);

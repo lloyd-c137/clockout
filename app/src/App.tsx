@@ -14,7 +14,7 @@ import {
   planDay
 } from './scheduler';
 
-type Mode = 'mini' | 'board' | 'detail' | 'admin';
+type Mode = 'mini' | 'board' | 'detail';
 
 type Settings = {
   start: string;
@@ -595,15 +595,7 @@ export default function App() {
 
   return (
     <main className={hostIsDesktop ? 'desktop-host' : 'web-stage'}>
-      {mode === 'mini' ? miniWidget : mode === 'board' ? boardWidget : mode === 'admin' ? <AdminView
-        tasks={activeSchedule}
-        currentSlot={currentSlot}
-        onBack={() => void switchMode('detail')}
-        onAdd={addTask}
-        onUpdate={updateManagedTask}
-        onDelete={deleteManagedTask}
-        onQuit={quitApp}
-      /> : <DetailView
+      {mode === 'mini' ? miniWidget : mode === 'board' ? boardWidget : <DetailView
         schedule={activeSchedule}
         committedPlan={committedPlan}
         todayPlan={todayPlan}
@@ -621,7 +613,7 @@ export default function App() {
         onMini={() => void switchMode('mini')}
         onCollapse={() => void switchMode('board')}
         onQuit={quitApp}
-        onAdmin={() => void switchMode('admin')}
+        onAdmin={() => void window.desktopWidget?.openAdmin()}
         onAdd={() => setShowTaskModal(true)}
         onTemporary={requestTemporaryTask}
         onSettings={setSettings}
@@ -881,14 +873,14 @@ function taskStatusLabel(status: TaskStatus) {
   return status === 'done' ? '已完成' : status === 'doing' ? '进行中' : '待处理';
 }
 
-function AdminView(props: {
+export function AdminView(props: {
   tasks: ScheduleTask[];
   currentSlot: number;
   onBack: () => void;
   onAdd: (task: ScheduleTask) => void;
   onUpdate: (task: ScheduleTask) => void;
   onDelete: (id: string) => void;
-  onQuit: () => void;
+  onQuit?: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all');
@@ -943,8 +935,8 @@ function AdminView(props: {
 
   return <section className="admin-shell">
     <header className="admin-header drag-surface">
-      <div className="admin-brand"><span className="admin-brand-mark"><OfficeMark /></span><div><strong>clockout · 老板管理后台</strong><small>把新增工作放进容量里，再决定谁来做、何时做</small></div></div>
-      <div className="admin-header-actions no-drag"><button type="button" onClick={props.onBack}>回到工作台</button><button type="button" className="admin-quit" onClick={props.onQuit}>退出</button></div>
+      <div className="admin-brand"><span className="admin-brand-mark"><OfficeMark /></span><div><strong>clockout · 管理后台</strong><small>把新增工作放进容量里，再决定谁来做、何时做</small></div></div>
+      <div className="admin-header-actions no-drag"><button type="button" onClick={props.onBack}>回到工作台</button>{props.onQuit && <button type="button" className="admin-quit" onClick={props.onQuit}>退出</button>}</div>
     </header>
     <div className="admin-body">
       <aside className="admin-intake pixel-panel">
@@ -1006,7 +998,7 @@ function DetailView(props: {
   return <section className="detail-shell">
     <header className="detail-header drag-surface">
       <div className="office-sign"><span><OfficeMark /></span><div><strong>clockout</strong><small>拖动的是完整任务，松手才保存排期</small></div></div>
-      <div className="header-actions no-drag"><button type="button" className="boss-entry" onClick={props.onAdmin}>老板管理后台</button><button type="button" onClick={props.onTemporary}>老板临时加单</button><button type="button" onClick={props.onAdd}>＋新增任务</button><WindowControls mode="detail" onMini={props.onMini} onBoard={props.onCollapse} onDetail={() => {}} onQuit={props.onQuit} /></div>
+      <div className="header-actions no-drag"><button type="button" className="boss-entry" onClick={props.onAdmin}>管理后台</button><button type="button" onClick={props.onTemporary}>老板临时加单</button><button type="button" onClick={props.onAdd}>＋新增任务</button><WindowControls mode="detail" onMini={props.onMini} onBoard={props.onCollapse} onDetail={() => {}} onQuit={props.onQuit} /></div>
     </header>
     <div className="detail-grid schedule-detail-grid">
       <section className="pixel-panel ledger schedule-ledger">
