@@ -906,7 +906,7 @@ export function AdminView(props: {
       <div className="admin-header-actions no-drag">{pendingTasks.length > 0 && <button type="button" className={props.confirmedAt ? 'admin-pay' : 'admin-confirm'} onClick={props.confirmedAt ? props.onPayAndPublish : props.onConfirm}>{props.confirmedAt ? `支付 ¥${props.overageAmount.toFixed(2)} 并发送` : `确认发送 ${pendingTasks.length} 项`}</button>}{props.onQuit && <button type="button" className="admin-quit" onClick={props.onQuit}>退出</button>}</div>
     </header>
     <div className="admin-body">
-      <aside className="admin-intake pixel-panel">
+      <aside className={'admin-intake pixel-panel ' + (props.confirmedAt ? 'admin-intake-overage' : '')}>
         <div className="admin-section-heading"><div><span className="section-kicker">任务入口</span><h2>{selectedTask ? '编辑任务' : props.confirmedAt ? '超额任务' : '新增任务'}</h2></div>{selectedTask && <button type="button" className="text-button" onClick={() => { setEditingId(null); setDraft(EMPTY_ADMIN_DRAFT); }}>新建</button>}</div>
         <form className="admin-form" onSubmit={submit}>
           <label>任务名称<input value={draft.title} onChange={(event) => updateDraft('title', event.target.value)} placeholder="例如：准备客户演示" /></label>
@@ -915,7 +915,7 @@ export function AdminView(props: {
           <div className="admin-form-grid"><label>负责人<input value={draft.assignee} onChange={(event) => updateDraft('assignee', event.target.value)} placeholder="员工" /></label><label>优先级<select value={draft.priority} onChange={(event) => updateDraft('priority', Number(event.target.value))}>{[1, 2, 3, 4, 5].map((priority) => <option value={priority} key={priority}>{priority} · {priority <= 2 ? '高' : priority === 3 ? '中' : '低'}</option>)}</select></label></div>
           {selectedTask && <div className="admin-form-grid"><label>状态<select value={draft.status} onChange={(event) => updateDraft('status', event.target.value as TaskStatus)}><option value="todo">待处理</option><option value="doing">进行中</option><option value="done">已完成</option></select></label><label className="admin-check"><input type="checkbox" checked={draft.locked} onChange={(event) => updateDraft('locked', event.target.checked)} />锁定时间</label></div>}
           <p className="admin-form-note">今天安排共 {todayMinutes} 分钟，棋盘剩余 {Math.max(0, 36 - todayPlan.totalSlots)} 格{todayPlan.overflowSlots ? '，当前已超出容量' : ''}。{props.confirmedAt ? '新增任务会作为超额任务，点击下方按钮后需支付超额费用，支付成功才会发送给员工。' : '点击确认发送前，员工不会看到待确认任务。'}</p>
-          <button className="admin-submit" type="submit" disabled={submitting}>{selectedTask ? '保存任务' : props.confirmedAt ? '添加超额任务并支付' : '加入排期'}</button>
+          <button className={'admin-submit' + (!selectedTask && props.confirmedAt ? ' admin-submit-overage' : '')} type="submit" disabled={submitting}>{selectedTask ? '保存任务' : props.confirmedAt ? '添加超额任务并支付' : '加入排期'}</button>
           {selectedTask && <button className="admin-delete" type="button" onClick={deleteSelected}>删除任务</button>}
         </form>
       </aside>

@@ -428,6 +428,10 @@ button { color: inherit; }
 .admin-body { min-height: 0; display: grid; grid-template-columns: 310px minmax(0, 1fr); gap: 18px; padding: 18px; overflow: hidden; }
 .admin-intake, .admin-task-panel { min-height: 0; padding: 18px; border-radius: 15px; background: #fff; box-shadow: 0 7px 20px rgba(82,111,105,.12); }
 .admin-intake { overflow: auto; }
+.admin-intake-overage { background: #fff7f5; }
+.admin-intake-overage .section-kicker { color: #c25a50; }
+.admin-intake-overage .admin-section-heading h2 { color: #b33e43; }
+.admin-intake-overage .admin-form-note { color: #a85d57; }
 .admin-section-heading, .admin-list-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .section-kicker { display: block; margin-bottom: 5px; color: #8a9a9d; font-size: 9px; font-weight: 700; letter-spacing: .04em; }
 .admin-section-heading h2, .admin-list-toolbar h2 { margin: 0; color: #3d5358; font-size: 17px; font-weight: 700; }
@@ -444,6 +448,8 @@ button { color: inherit; }
 .admin-submit:disabled { cursor: wait; opacity: .68; }
 .admin-submit { background: #4e9a8b; color: #fff; box-shadow: 0 3px 0 #347467; }
 .admin-submit:hover { background: #438d80; }
+.admin-submit-overage { background: #c94753; box-shadow: 0 3px 0 #9d303c; }
+.admin-submit-overage:hover { background: #b83c48; }
 .admin-delete { margin-top: 8px; background: #fff0ed; color: #bd6a5c; }
 .admin-delete:hover { background: #ffe4df; }
 .admin-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
