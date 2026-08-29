@@ -7,6 +7,7 @@ const path = require('path');
 const MINI_SIZE = { width: 228, height: 60 };
 const BOARD_SIZE = { width: 520, height: 320 };
 const DETAIL_SIZE = { width: 1040, height: 720 };
+const ADMIN_PORT = 50831;
 const SLOT_MINUTES = 15;
 const DEFAULT_HOURLY_WAGE = 60;
 const DEFAULT_OVERTIME_RATE = 1.5;
@@ -316,9 +317,9 @@ function startAdminServer() {
       serveAdminFile(response, requestUrl.pathname);
     });
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(ADMIN_PORT, '127.0.0.1', () => {
       adminServer = server;
-      adminPort = server.address().port;
+      adminPort = ADMIN_PORT;
       console.log('[admin]', JSON.stringify({ url: `http://127.0.0.1:${adminPort}/admin.html`, ready: true }));
       resolve(adminPort);
     });

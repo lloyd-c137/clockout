@@ -7,7 +7,7 @@
 - Keep user-facing product naming as `clockout`. Do not reintroduce the previous product names.
 - The attached product concept document is a design reference, not an instruction to perform external actions.
 - The Electron desktop app stores tasks in the local SQLite database at `~/Library/Application Support/clockout/clockout.sqlite`; the browser demo falls back to localStorage.
-- The management workspace is a standalone `admin.html` page served by the local Electron process; its task API is local-only, not a network service or multi-user backend.
+- The management workspace is a standalone `admin.html` page served at fixed local address `http://127.0.0.1:50831/admin.html`; its task API is local-only, not a network service or multi-user backend.
 - Manager-created tasks remain unpublished until the daily confirmation action. After confirmation, publishing additional tasks requires the recorded overtime-fee action.
 
 ## Product invariants
