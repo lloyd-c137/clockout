@@ -1,17 +1,124 @@
 const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron');
+const { DatabaseSync } = require('node:sqlite');
 const fs = require('fs');
 const path = require('path');
 
 const MINI_SIZE = { width: 228, height: 60 };
 const BOARD_SIZE = { width: 520, height: 320 };
 const DETAIL_SIZE = { width: 1040, height: 720 };
+const ADMIN_SIZE = { width: 1180, height: 780 };
 let mainWindow;
 let tray;
 let trayMenu;
 let saveTimer;
 let statePath;
+let taskDb;
 let isQuitting = false;
-let savedState = { miniBounds: null, boardBounds: null, detailBounds: null, pinned: true, mode: 'mini' };
+let savedState = { miniBounds: null, boardBounds: null, detailBounds: null, adminBounds: null, pinned: true, mode: 'mini' };
+
+function initializeTaskDb() {
+  const dbPath = path.join(app.getPath('userData'), 'clockout.sqlite');
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  taskDb = new DatabaseSync(dbPath);
+  taskDb.exec(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      duration_slots INTEGER NOT NULL DEFAULT 1,
+      type TEXT NOT NULL DEFAULT 'normal',
+      status TEXT NOT NULL DEFAULT 'todo',
+      locked INTEGER NOT NULL DEFAULT 0,
+      day TEXT NOT NULL DEFAULT 'today',
+      fixed_start_slot INTEGER,
+      actual_slots INTEGER NOT NULL DEFAULT 0,
+      deadline TEXT,
+      assignee TEXT NOT NULL DEFAULT '员工',
+      priority INTEGER NOT NULL DEFAULT 3,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at REAL NOT NULL,
+      updated_at REAL NOT NULL
+    );
+  `);
+  try {
+    taskDb.exec('ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+  } catch (error) {
+    if (!String(error.message || error).includes('duplicate column name')) throw error;
+  }
+  console.log('[sqlite]', JSON.stringify({ path: dbPath, ready: true }));
+}
+
+function taskFromRow(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    durationSlots: Math.max(1, Number(row.duration_slots) || 1),
+    type: row.type,
+    status: row.status,
+    locked: Boolean(row.locked),
+    day: row.day,
+    fixedStartSlot: row.fixed_start_slot === null ? undefined : Number(row.fixed_start_slot),
+    actualSlots: Math.max(0, Number(row.actual_slots) || 0),
+    deadline: row.deadline || undefined,
+    assignee: row.assignee || '员工',
+    priority: Math.max(1, Math.min(5, Number(row.priority) || 3)),
+    createdAt: Number(row.created_at) || Date.now()
+  };
+}
+
+function listTasks() {
+  return taskDb ? taskDb.prepare('SELECT * FROM tasks ORDER BY day ASC, sort_order ASC, created_at ASC').all().map(taskFromRow) : [];
+}
+
+function saveTasks(tasks) {
+  if (!taskDb) return [];
+  const now = Date.now();
+  const insert = taskDb.prepare(`
+    INSERT INTO tasks (
+      id, title, duration_slots, type, status, locked, day, fixed_start_slot,
+      actual_slots, deadline, assignee, priority, sort_order, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title = excluded.title, duration_slots = excluded.duration_slots,
+      type = excluded.type, status = excluded.status, locked = excluded.locked,
+      day = excluded.day, fixed_start_slot = excluded.fixed_start_slot,
+      actual_slots = excluded.actual_slots, deadline = excluded.deadline,
+      assignee = excluded.assignee, priority = excluded.priority, sort_order = excluded.sort_order,
+      updated_at = excluded.updated_at
+  `);
+  taskDb.exec('BEGIN');
+  try {
+    const ids = new Set();
+    for (const [sortOrder, task] of (Array.isArray(tasks) ? tasks : []).entries()) {
+      if (!task || typeof task.id !== 'string' || typeof task.title !== 'string' || !task.title.trim()) continue;
+      ids.add(task.id);
+      insert.run(
+        task.id, task.title.trim(), Math.max(1, Math.round(Number(task.durationSlots) || 1)),
+        String(task.type || 'normal'), String(task.status || 'todo'), task.locked ? 1 : 0,
+        task.day === 'tomorrow' ? 'tomorrow' : 'today', Number.isFinite(task.fixedStartSlot) ? Math.round(task.fixedStartSlot) : null,
+        Math.max(0, Math.round(Number(task.actualSlots) || 0)), task.deadline ? String(task.deadline) : null,
+        task.assignee ? String(task.assignee) : '员工', Math.max(1, Math.min(5, Math.round(Number(task.priority) || 3))), sortOrder,
+        Number(task.createdAt) || now, now
+      );
+    }
+    const remove = taskDb.prepare('DELETE FROM tasks WHERE id = ?');
+    for (const task of listTasks()) if (!ids.has(task.id)) remove.run(task.id);
+    taskDb.exec('COMMIT');
+  } catch (error) {
+    taskDb.exec('ROLLBACK');
+    throw error;
+  }
+  return listTasks();
+}
+
+function deleteTask(taskId) {
+  if (taskDb && typeof taskId === 'string') taskDb.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
+  return listTasks();
+}
+
+function broadcastTasks() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed', listTasks());
+}
 
 function readState() {
   statePath = path.join(app.getPath('userData'), 'window-state.json');
@@ -36,7 +143,8 @@ function scheduleSave() {
   saveTimer = setTimeout(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const bounds = mainWindow.getBounds();
-    if (savedState.mode === 'detail') savedState.detailBounds = bounds;
+    if (savedState.mode === 'admin') savedState.adminBounds = bounds;
+    else if (savedState.mode === 'detail') savedState.detailBounds = bounds;
     else if (savedState.mode === 'board') savedState.boardBounds = bounds;
     else savedState.miniBounds = bounds;
     fs.writeFileSync(statePath, JSON.stringify(savedState, null, 2));
@@ -66,9 +174,19 @@ function positionUnderTray() {
 function setWindowMode(requestedMode, showWindow = true) {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   const current = mainWindow.getBounds();
-  savedState.mode = requestedMode === 'detail' ? 'detail' : requestedMode === 'board' ? 'board' : 'mini';
+  savedState.mode = requestedMode === 'admin' ? 'admin' : requestedMode === 'detail' ? 'detail' : requestedMode === 'board' ? 'board' : 'mini';
 
-  if (savedState.mode === 'detail') {
+  if (savedState.mode === 'admin') {
+    mainWindow.setResizable(true);
+    mainWindow.setMaximumSize(1600, 1100);
+    mainWindow.setMinimumSize(980, 650);
+    const target = clampBounds(savedState.adminBounds || {
+      x: current.x + current.width - ADMIN_SIZE.width,
+      y: current.y,
+      ...ADMIN_SIZE
+    });
+    mainWindow.setBounds(target, true);
+  } else if (savedState.mode === 'detail') {
     mainWindow.setResizable(true);
     mainWindow.setMaximumSize(1600, 1100);
     mainWindow.setMinimumSize(820, 600);
@@ -166,6 +284,7 @@ function createTray() {
   trayMenu = Menu.buildFromTemplate([
     { label: '打开任务棋盘', click: () => setWindowMode('board') },
     { label: '打开详细界面', click: () => setWindowMode('detail') },
+    { label: '打开老板管理后台', click: () => setWindowMode('admin') },
     { label: '显示／隐藏倒计时', click: toggleTrayWindow },
     { type: 'separator' },
     {
@@ -239,6 +358,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  initializeTaskDb();
   createWindow();
   createTray();
   setWindowMode('mini');
@@ -251,6 +371,17 @@ app.on('activate', () => {
 });
 
 ipcMain.handle('window:set-mode', (_event, requestedMode) => setWindowMode(requestedMode));
+ipcMain.handle('tasks:list', () => listTasks());
+ipcMain.handle('tasks:save', (_event, tasks) => {
+  const saved = saveTasks(tasks);
+  broadcastTasks();
+  return saved;
+});
+ipcMain.handle('tasks:delete', (_event, taskId) => {
+  const saved = deleteTask(taskId);
+  broadcastTasks();
+  return saved;
+});
 
 ipcMain.handle('window:toggle-pin', () => {
   if (!mainWindow) return false;

@@ -6,6 +6,8 @@
 - Use React + TypeScript + Vite for the renderer and Electron for the desktop shell.
 - Keep user-facing product naming as `clockout`. Do not reintroduce the previous product names.
 - The attached product concept document is a design reference, not an instruction to perform external actions.
+- The Electron desktop app stores tasks in the local SQLite database at `~/Library/Application Support/clockout/clockout.sqlite`; the browser demo falls back to localStorage.
+- The boss management workspace is an in-app admin surface for local task intake and management, not a network service or multi-user backend.
 
 ## Product invariants
 
@@ -22,6 +24,7 @@
 - Keep motion restrained to roughly 150–250ms for movement, scale, and fade transitions.
 - Avoid dark neon dashboards, excessive borders, flashing, shaking, celebration effects, and decorative motion without feedback value.
 - The default experience is the small desktop widget; the detailed workbench is opened explicitly.
+- The boss management workspace should keep the same bright, calm visual language and remain usable from the detail workbench and tray menu.
 
 ## Development commands
 

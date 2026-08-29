@@ -13,6 +13,8 @@ export type ScheduleTask = {
   fixedStartSlot?: number;
   actualSlots?: number;
   deadline?: string;
+  assignee?: string;
+  priority?: number;
   createdAt?: number;
 };
 

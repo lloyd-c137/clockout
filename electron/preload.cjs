@@ -9,6 +9,14 @@ contextBridge.exposeInMainWorld('desktopWidget', {
     ipcRenderer.on('window:mode-changed', listener);
     return () => ipcRenderer.removeListener('window:mode-changed', listener);
   },
+  loadTasks: () => ipcRenderer.invoke('tasks:list'),
+  saveTasks: (tasks) => ipcRenderer.invoke('tasks:save', tasks),
+  deleteTask: (taskId) => ipcRenderer.invoke('tasks:delete', taskId),
+  onTasksChanged: (callback) => {
+    const listener = (_event, tasks) => callback(tasks);
+    ipcRenderer.on('tasks:changed', listener);
+    return () => ipcRenderer.removeListener('tasks:changed', listener);
+  },
   hideFor: (milliseconds) => ipcRenderer.send('window:hide-for', milliseconds),
   close: () => ipcRenderer.send('window:close'),
   quit: () => ipcRenderer.send('app:quit')

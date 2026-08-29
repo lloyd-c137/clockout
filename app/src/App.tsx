@@ -4,6 +4,7 @@ import {
   DayPlan,
   ScheduleTask,
   TaskDay,
+  TaskStatus,
   TaskType,
   calculateInsertionPreview,
   cloneSchedule,
@@ -13,7 +14,7 @@ import {
   planDay
 } from './scheduler';
 
-type Mode = 'mini' | 'board' | 'detail';
+type Mode = 'mini' | 'board' | 'detail' | 'admin';
 
 type Settings = {
   start: string;
@@ -97,6 +98,8 @@ function makeTask(
     day: 'today',
     actualSlots: 0,
     deadline: '17:00',
+    assignee: '员工',
+    priority: 3,
     createdAt: Date.now() + Math.random(),
     ...options
   };
@@ -166,8 +169,10 @@ function scheduleSignature(schedule: ScheduleTask[]) {
 }
 
 export default function App() {
+  const hostIsDesktop = Boolean(window.desktopWidget);
   const [mode, setMode] = useState<Mode>('mini');
   const [appExited, setAppExited] = useState(false);
+  const [dbReady, setDbReady] = useState(!hostIsDesktop);
   const [committedSchedule, setCommittedSchedule] = useState<ScheduleTask[]>(loadSchedule);
   const [previewSchedule, setPreviewSchedule] = useState<ScheduleTask[] | null>(null);
   const [settings, setSettings] = useState<Settings>(() => loadState(SETTINGS_KEY, DEFAULT_SETTINGS));
@@ -185,8 +190,6 @@ export default function App() {
   const previewRef = useRef<ScheduleTask[] | null>(previewSchedule);
   const extraCompRef = useRef(extraComp);
   const undoTimer = useRef<number | null>(null);
-  const hostIsDesktop = Boolean(window.desktopWidget);
-
   committedRef.current = committedSchedule;
   previewRef.current = previewSchedule;
   extraCompRef.current = extraComp;
@@ -196,7 +199,27 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(committedSchedule)), [committedSchedule]);
+  useEffect(() => {
+    if (!window.desktopWidget) return;
+    let active = true;
+    void window.desktopWidget.loadTasks().then((tasks) => {
+      if (!active) return;
+      if (tasks.length) {
+        setCommittedSchedule(tasks);
+        committedRef.current = tasks;
+      } else {
+        void window.desktopWidget?.saveTasks(committedRef.current);
+      }
+      setDbReady(true);
+    }).catch(() => { if (active) setDbReady(true); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!dbReady) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(committedSchedule));
+    void window.desktopWidget?.saveTasks(committedSchedule);
+  }, [committedSchedule, dbReady]);
   useEffect(() => localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)), [settings]);
   useEffect(() => localStorage.setItem(COMP_KEY, JSON.stringify(extraComp)), [extraComp]);
 
@@ -226,6 +249,11 @@ export default function App() {
   }, [secondsUntilEnd]);
 
   useEffect(() => window.desktopWidget?.onModeChanged((nextMode) => setMode(nextMode)), []);
+  useEffect(() => window.desktopWidget?.onTasksChanged((tasks) => {
+    setCommittedSchedule(tasks);
+    committedRef.current = tasks;
+    updatePreview(null);
+  }), []);
 
   function showUndo(message: string, before: UndoRecord) {
     setUndoRecord(before);
@@ -475,6 +503,15 @@ export default function App() {
     addTask(makeTask('老板临时改方案', 3, 'temporary', { deadline: settings.end }));
   }
 
+  function updateManagedTask(task: ScheduleTask) {
+    const next = committedRef.current.map((current) => current.id === task.id ? task : current);
+    commit(next, '任务已更新');
+  }
+
+  function deleteManagedTask(taskId: string) {
+    commit(committedRef.current.filter((task) => task.id !== taskId), '任务已删除');
+  }
+
   function resolveOverflow(action: 'tomorrow' | 'resize' | 'replace' | 'overtime' | 'cancel') {
     if (!pendingOverflow) return;
     const { snapshot, preview, taskId, overflowSlots: exceeded } = pendingOverflow;
@@ -558,7 +595,15 @@ export default function App() {
 
   return (
     <main className={hostIsDesktop ? 'desktop-host' : 'web-stage'}>
-      {mode === 'mini' ? miniWidget : mode === 'board' ? boardWidget : <DetailView
+      {mode === 'mini' ? miniWidget : mode === 'board' ? boardWidget : mode === 'admin' ? <AdminView
+        tasks={activeSchedule}
+        currentSlot={currentSlot}
+        onBack={() => void switchMode('detail')}
+        onAdd={addTask}
+        onUpdate={updateManagedTask}
+        onDelete={deleteManagedTask}
+        onQuit={quitApp}
+      /> : <DetailView
         schedule={activeSchedule}
         committedPlan={committedPlan}
         todayPlan={todayPlan}
@@ -576,6 +621,7 @@ export default function App() {
         onMini={() => void switchMode('mini')}
         onCollapse={() => void switchMode('board')}
         onQuit={quitApp}
+        onAdmin={() => void switchMode('admin')}
         onAdd={() => setShowTaskModal(true)}
         onTemporary={requestTemporaryTask}
         onSettings={setSettings}
@@ -800,6 +846,132 @@ function TaskModal({ onClose, onAdd }: { onClose: () => void; onAdd: (task: Sche
   </div>;
 }
 
+type AdminDraft = {
+  title: string;
+  durationSlots: number;
+  type: TaskType;
+  deadline: string;
+  day: TaskDay;
+  status: TaskStatus;
+  assignee: string;
+  priority: number;
+  locked: boolean;
+};
+
+const EMPTY_ADMIN_DRAFT: AdminDraft = {
+  title: '', durationSlots: 3, type: 'normal', deadline: '17:00', day: 'today',
+  status: 'todo', assignee: '员工', priority: 3, locked: false
+};
+
+function taskToAdminDraft(task: ScheduleTask): AdminDraft {
+  return {
+    title: task.title,
+    durationSlots: task.durationSlots,
+    type: task.type,
+    deadline: task.deadline || '17:00',
+    day: task.day,
+    status: task.status,
+    assignee: task.assignee || '员工',
+    priority: task.priority || 3,
+    locked: Boolean(task.locked)
+  };
+}
+
+function taskStatusLabel(status: TaskStatus) {
+  return status === 'done' ? '已完成' : status === 'doing' ? '进行中' : '待处理';
+}
+
+function AdminView(props: {
+  tasks: ScheduleTask[];
+  currentSlot: number;
+  onBack: () => void;
+  onAdd: (task: ScheduleTask) => void;
+  onUpdate: (task: ScheduleTask) => void;
+  onDelete: (id: string) => void;
+  onQuit: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all');
+  const [dayFilter, setDayFilter] = useState<'all' | TaskDay>('all');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<AdminDraft>(EMPTY_ADMIN_DRAFT);
+  const selectedTask = props.tasks.find((task) => task.id === editingId) || null;
+
+  useEffect(() => {
+    setDraft(selectedTask ? taskToAdminDraft(selectedTask) : EMPTY_ADMIN_DRAFT);
+  }, [editingId, selectedTask]);
+
+  const filteredTasks = props.tasks.filter((task) => {
+    const matchesQuery = !query.trim() || [task.title, task.assignee || ''].some((value) => value.toLowerCase().includes(query.trim().toLowerCase()));
+    return matchesQuery && (statusFilter === 'all' || task.status === statusFilter) && (dayFilter === 'all' || task.day === dayFilter);
+  });
+  const todayPlan = planDay(props.tasks, 'today', props.currentSlot, props.currentSlot);
+  const openCount = props.tasks.filter((task) => task.status !== 'done').length;
+  const doingCount = props.tasks.filter((task) => task.status === 'doing').length;
+  const todayMinutes = props.tasks.filter((task) => task.day === 'today' && task.status !== 'done').reduce((sum, task) => sum + task.durationSlots * 15, 0);
+
+  function updateDraft<K extends keyof AdminDraft>(key: K, value: AdminDraft[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!draft.title.trim()) return;
+    if (selectedTask) {
+      props.onUpdate({ ...selectedTask, ...draft, title: draft.title.trim(), actualSlots: selectedTask.actualSlots || 0 });
+    } else {
+      props.onAdd(makeTask(draft.title.trim(), draft.durationSlots, draft.type, {
+        deadline: draft.deadline, day: draft.day, status: draft.status, assignee: draft.assignee.trim() || '员工',
+        priority: draft.priority, locked: draft.locked
+      }));
+    }
+    setEditingId(null);
+    setDraft(EMPTY_ADMIN_DRAFT);
+  }
+
+  function selectTask(task: ScheduleTask) {
+    setEditingId(task.id);
+    setDraft(taskToAdminDraft(task));
+  }
+
+  function deleteSelected() {
+    if (!selectedTask || !window.confirm(`确定删除“${selectedTask.title}”吗？`)) return;
+    props.onDelete(selectedTask.id);
+    setEditingId(null);
+    setDraft(EMPTY_ADMIN_DRAFT);
+  }
+
+  return <section className="admin-shell">
+    <header className="admin-header drag-surface">
+      <div className="admin-brand"><span className="admin-brand-mark"><OfficeMark /></span><div><strong>clockout · 老板管理后台</strong><small>把新增工作放进容量里，再决定谁来做、何时做</small></div></div>
+      <div className="admin-header-actions no-drag"><button type="button" onClick={props.onBack}>回到工作台</button><button type="button" className="admin-quit" onClick={props.onQuit}>退出</button></div>
+    </header>
+    <div className="admin-body">
+      <aside className="admin-intake pixel-panel">
+        <div className="admin-section-heading"><div><span className="section-kicker">任务入口</span><h2>{selectedTask ? '编辑任务' : '新增任务'}</h2></div>{selectedTask && <button type="button" className="text-button" onClick={() => { setEditingId(null); setDraft(EMPTY_ADMIN_DRAFT); }}>新建</button>}</div>
+        <form className="admin-form" onSubmit={submit}>
+          <label>任务名称<input value={draft.title} onChange={(event) => updateDraft('title', event.target.value)} placeholder="例如：准备客户演示" /></label>
+          <div className="admin-form-grid"><label>类型<select value={draft.type} onChange={(event) => updateDraft('type', event.target.value as TaskType)}>{Object.entries(TYPE_META).map(([value, meta]) => <option value={value} key={value}>{meta.label}</option>)}</select></label><label>时长<select value={draft.durationSlots} onChange={(event) => updateDraft('durationSlots', Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => index + 1).map((slots) => <option value={slots} key={slots}>{slots * 15}分钟</option>)}</select></label></div>
+          <div className="admin-form-grid"><label>安排日期<select value={draft.day} onChange={(event) => updateDraft('day', event.target.value as TaskDay)}><option value="today">今天</option><option value="tomorrow">明天</option></select></label><label>截止时间<input type="time" value={draft.deadline} onChange={(event) => updateDraft('deadline', event.target.value)} /></label></div>
+          <div className="admin-form-grid"><label>负责人<input value={draft.assignee} onChange={(event) => updateDraft('assignee', event.target.value)} placeholder="员工" /></label><label>优先级<select value={draft.priority} onChange={(event) => updateDraft('priority', Number(event.target.value))}>{[1, 2, 3, 4, 5].map((priority) => <option value={priority} key={priority}>{priority} · {priority <= 2 ? '高' : priority === 3 ? '中' : '低'}</option>)}</select></label></div>
+          {selectedTask && <div className="admin-form-grid"><label>状态<select value={draft.status} onChange={(event) => updateDraft('status', event.target.value as TaskStatus)}><option value="todo">待处理</option><option value="doing">进行中</option><option value="done">已完成</option></select></label><label className="admin-check"><input type="checkbox" checked={draft.locked} onChange={(event) => updateDraft('locked', event.target.checked)} />锁定时间</label></div>}
+          <p className="admin-form-note">今天安排共 {todayMinutes} 分钟，棋盘剩余 {Math.max(0, 36 - todayPlan.totalSlots)} 格{todayPlan.overflowSlots ? '，当前已超出容量' : ''}。</p>
+          <button className="admin-submit" type="submit">{selectedTask ? '保存任务' : '加入排期'}</button>
+          {selectedTask && <button className="admin-delete" type="button" onClick={deleteSelected}>删除任务</button>}
+        </form>
+      </aside>
+      <main className="admin-main">
+        <div className="admin-overview"><div><span>全部任务</span><strong>{props.tasks.length}</strong></div><div><span>待处理</span><strong>{openCount}</strong></div><div><span>进行中</span><strong>{doingCount}</strong></div><div className={todayPlan.overflowSlots ? 'is-warning' : ''}><span>今日容量</span><strong>{todayPlan.totalSlots}/36</strong></div></div>
+        <section className="admin-task-panel pixel-panel">
+          <div className="admin-list-toolbar"><div><span className="section-kicker">任务清单</span><h2>安排与进度</h2></div><div className="admin-filters"><input aria-label="搜索任务或负责人" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索任务或负责人" /><select aria-label="按状态筛选" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | TaskStatus)}><option value="all">全部状态</option><option value="todo">待处理</option><option value="doing">进行中</option><option value="done">已完成</option></select><select aria-label="按日期筛选" value={dayFilter} onChange={(event) => setDayFilter(event.target.value as 'all' | TaskDay)}><option value="all">全部日期</option><option value="today">今天</option><option value="tomorrow">明天</option></select></div></div>
+          <div className="admin-list-head"><span /><span>任务</span><span>负责人</span><span>安排</span><span>状态</span><span>优先级</span><span /></div>
+          <div className="admin-task-list">{filteredTasks.length ? filteredTasks.map((task) => <article className={'admin-task-row ' + (task.id === editingId ? 'selected' : '')} key={task.id} onClick={() => selectTask(task)} onKeyDown={(event) => { if (event.key === 'Enter') selectTask(task); }} tabIndex={0}><span className={'admin-task-icon kind-' + task.type}><TaskIcon type={task.type} /></span><div className="admin-task-title"><strong>{task.title}</strong><small>{task.durationSlots * 15}分钟 · 截止 {task.deadline || '未设置'}{task.locked ? ' · 已锁定' : ''}</small></div><span className="admin-assignee">{task.assignee || '员工'}</span><span className="admin-day">{task.day === 'today' ? '今天' : '明天'}</span><button type="button" className={'admin-status status-' + task.status} onClick={(event) => { event.stopPropagation(); props.onUpdate({ ...task, status: task.status === 'todo' ? 'doing' : task.status === 'doing' ? 'done' : 'todo', actualSlots: task.status === 'doing' ? task.durationSlots : task.actualSlots }); }}>{taskStatusLabel(task.status)}</button><span className={'priority priority-' + (task.priority || 3)}>{task.priority || 3}</span><button type="button" className="admin-edit" onClick={(event) => { event.stopPropagation(); selectTask(task); }}>编辑</button></article>) : <div className="admin-empty"><strong>没有符合条件的任务</strong><span>调整筛选条件，或从左侧新增一项任务。</span></div>}</div>
+        </section>
+      </main>
+    </div>
+  </section>;
+}
+
 function DetailView(props: {
   schedule: ScheduleTask[];
   committedPlan: DayPlan;
@@ -818,6 +990,7 @@ function DetailView(props: {
   onMini: () => void;
   onCollapse: () => void;
   onQuit: () => void;
+  onAdmin: () => void;
   onAdd: () => void;
   onTemporary: () => void;
   onSettings: (settings: Settings) => void;
@@ -833,7 +1006,7 @@ function DetailView(props: {
   return <section className="detail-shell">
     <header className="detail-header drag-surface">
       <div className="office-sign"><span><OfficeMark /></span><div><strong>clockout</strong><small>拖动的是完整任务，松手才保存排期</small></div></div>
-      <div className="header-actions no-drag"><button type="button" onClick={props.onTemporary}>老板临时加单</button><button type="button" onClick={props.onAdd}>＋新增任务</button><WindowControls mode="detail" onMini={props.onMini} onBoard={props.onCollapse} onDetail={() => {}} onQuit={props.onQuit} /></div>
+      <div className="header-actions no-drag"><button type="button" className="boss-entry" onClick={props.onAdmin}>老板管理后台</button><button type="button" onClick={props.onTemporary}>老板临时加单</button><button type="button" onClick={props.onAdd}>＋新增任务</button><WindowControls mode="detail" onMini={props.onMini} onBoard={props.onCollapse} onDetail={() => {}} onQuit={props.onQuit} /></div>
     </header>
     <div className="detail-grid schedule-detail-grid">
       <section className="pixel-panel ledger schedule-ledger">
