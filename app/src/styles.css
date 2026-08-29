@@ -1401,23 +1401,23 @@ button { color: inherit; }
 .detail-board-panel .task-board.schedule-board {
   padding: 8px;
   border-radius: 2px;
-  background: #14282e;
-  box-shadow: inset 0 0 0 3px #0c1b20, inset 0 0 0 5px #365056;
+  background: #edf7f3;
+  box-shadow: inset 0 0 0 3px #bddbd1, inset 0 0 0 5px #dcece6;
 }
 .board-base-layer,
 .task-piece-layer { inset: 10px; gap: 3px; }
 .board-slot-base {
   border-radius: 2px;
-  background: #20383e;
-  box-shadow: inset 1px 1px 0 rgba(255,255,255,.035), inset -1px -1px 0 rgba(0,0,0,.22);
+  background: #d5ebe3;
+  box-shadow: inset 1px 1px 0 rgba(255,255,255,.55), inset -1px -1px 0 rgba(75,116,105,.16);
 }
-.board-slot-base.past-slot { background: #1b2e33; opacity: .62; }
+.board-slot-base.past-slot { background: #c7dcd6; opacity: .72; }
 .task-piece-layer .board-cell {
   border-radius: 2px;
   box-shadow:
     inset 3px 3px 0 rgba(255,255,255,.25),
-    inset -3px -3px 0 rgba(23,43,46,.24),
-    0 2px 0 rgba(5,18,20,.22);
+    inset -3px -3px 0 rgba(43,77,69,.24),
+    0 2px 0 rgba(36,87,74,.2);
 }
 .task-piece-layer .board-cell::before {
   content: '';
@@ -1426,6 +1426,13 @@ button { color: inherit; }
   border: 1px solid rgba(255,255,255,.13);
   pointer-events: none;
 }
+.task-piece-layer .kind-normal { --task-color: #2f91e8; }
+.task-piece-layer .kind-meeting { --task-color: #f2b92e; }
+.task-piece-layer .kind-ai { --task-color: #32bd6b; }
+.task-piece-layer .kind-urgent { --task-color: #ed554b; }
+.task-piece-layer .kind-waiting { --task-color: #8d9da9; }
+.task-piece-layer .kind-boss { --task-color: #cc6fea; }
+.task-piece-layer .kind-temporary { --task-color: #ad68df; }
 .task-piece-layer .board-cell.late { background: color-mix(in srgb, var(--task-color) 55%, #294148); opacity: .75; }
 .task-piece-layer .board-cell.dragging-task { opacity: .18; transform: scale(.98); }
 .drag-origin-placeholder { border-radius: 2px; background: rgba(225,238,231,.09); box-shadow: inset 0 0 0 2px rgba(225,238,231,.16); }
