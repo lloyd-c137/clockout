@@ -438,7 +438,9 @@ button { color: inherit; }
 .text-button { border: 0; background: transparent; color: #4c9a8b; font-size: 10px; font-weight: 700; cursor: pointer; }
 .admin-form { margin-top: 18px; }
 .admin-form label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; color: #6c7d80; font-size: 10px; font-weight: 600; }
+.admin-form-error { margin: -5px 0 12px; color: #b33e43; font-size: 10px; line-height: 1.4; }
 .admin-form input, .admin-form select, .admin-filters input, .admin-filters select { min-width: 0; padding: 10px 11px; border: 1px solid #d5e5e0; border-radius: 9px; outline: 0; background: #f7fbf9; color: #405459; font-size: 11px; }
+.admin-form input[aria-invalid="true"] { border-color: #c94753; box-shadow: 0 0 0 3px rgba(201,71,83,.14); }
 .admin-form input:focus, .admin-form select:focus, .admin-filters input:focus, .admin-filters select:focus, .admin-task-row:focus-visible { border-color: #4d9b8d; box-shadow: 0 0 0 3px rgba(77,155,141,.16); }
 .admin-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .admin-form .admin-check { display: flex; flex-direction: row; align-items: center; gap: 8px; padding-top: 24px; }

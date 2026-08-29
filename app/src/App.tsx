@@ -846,6 +846,8 @@ export function AdminView(props: {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<AdminDraft>(EMPTY_ADMIN_DRAFT);
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const selectedTask = props.tasks.find((task) => task.id === editingId) || null;
   const pendingTasks = props.tasks.filter((task) => task.published === false);
 
@@ -864,11 +866,18 @@ export function AdminView(props: {
 
   function updateDraft<K extends keyof AdminDraft>(key: K, value: AdminDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
+    if (key === 'title' && typeof value === 'string' && value.trim()) setFormError('');
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!draft.title.trim() || submitting) return;
+    if (submitting) return;
+    if (!draft.title.trim()) {
+      setFormError(props.confirmedAt ? '请先填写任务名称，再添加超额任务。' : '请先填写任务名称。');
+      titleInputRef.current?.focus();
+      return;
+    }
+    setFormError('');
     if (selectedTask) {
       props.onUpdate({ ...selectedTask, ...draft, title: draft.title.trim(), actualSlots: selectedTask.actualSlots || 0 });
       setEditingId(null);
@@ -909,7 +918,8 @@ export function AdminView(props: {
       <aside className={'admin-intake pixel-panel ' + (props.confirmedAt ? 'admin-intake-overage' : '')}>
         <div className="admin-section-heading"><div><span className="section-kicker">任务入口</span><h2>{selectedTask ? '编辑任务' : props.confirmedAt ? '超额任务' : '新增任务'}</h2></div>{selectedTask && <button type="button" className="text-button" onClick={() => { setEditingId(null); setDraft(EMPTY_ADMIN_DRAFT); }}>新建</button>}</div>
         <form className="admin-form" onSubmit={submit}>
-          <label>任务名称<input value={draft.title} onChange={(event) => updateDraft('title', event.target.value)} placeholder="例如：准备客户演示" /></label>
+          <label>任务名称<input ref={titleInputRef} value={draft.title} onChange={(event) => updateDraft('title', event.target.value)} placeholder="例如：准备客户演示" aria-invalid={Boolean(formError)} aria-describedby={formError ? 'admin-form-error' : undefined} /></label>
+          {formError && <p className="admin-form-error" id="admin-form-error" role="alert">{formError}</p>}
           <div className="admin-form-grid"><label>类型<select value={draft.type} onChange={(event) => updateDraft('type', event.target.value as TaskType)}>{Object.entries(TYPE_META).map(([value, meta]) => <option value={value} key={value}>{meta.label}</option>)}</select></label><label>时长<select value={draft.durationSlots} onChange={(event) => updateDraft('durationSlots', Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => index + 1).map((slots) => <option value={slots} key={slots}>{slots * 15}分钟</option>)}</select></label></div>
           <div className="admin-form-grid"><label>安排日期<select value={draft.day} onChange={(event) => updateDraft('day', event.target.value as TaskDay)}><option value="today">今天</option><option value="tomorrow">明天</option></select></label><label>截止时间<input type="time" value={draft.deadline} onChange={(event) => updateDraft('deadline', event.target.value)} /></label></div>
           <div className="admin-form-grid"><label>负责人<input value={draft.assignee} onChange={(event) => updateDraft('assignee', event.target.value)} placeholder="员工" /></label><label>优先级<select value={draft.priority} onChange={(event) => updateDraft('priority', Number(event.target.value))}>{[1, 2, 3, 4, 5].map((priority) => <option value={priority} key={priority}>{priority} · {priority <= 2 ? '高' : priority === 3 ? '中' : '低'}</option>)}</select></label></div>
