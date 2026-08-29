@@ -6,7 +6,6 @@ declare global {
   interface Window {
     desktopWidget?: {
       setMode: (mode: 'mini' | 'board' | 'detail') => Promise<boolean>;
-      openAdmin: () => Promise<string>;
       togglePin: () => Promise<boolean>;
       updateTrayCountdown: (seconds: number) => Promise<boolean>;
       onModeChanged: (callback: (mode: 'mini' | 'board' | 'detail') => void) => () => void;

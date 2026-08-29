@@ -574,7 +574,6 @@ app.on('activate', () => {
 });
 
 ipcMain.handle('window:set-mode', (_event, requestedMode) => setWindowMode(requestedMode));
-ipcMain.handle('admin:open', () => openAdminPage());
 ipcMain.handle('tasks:list', () => listPublishedTasks());
 ipcMain.handle('tasks:save', (_event, tasks) => {
   const saved = savePublishedTasks(tasks);

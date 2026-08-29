@@ -614,7 +614,6 @@ export default function App() {
         onMini={() => void switchMode('mini')}
         onCollapse={() => void switchMode('board')}
         onQuit={quitApp}
-        onAdmin={() => void window.desktopWidget?.openAdmin()}
         onAdd={() => setShowTaskModal(true)}
         onTemporary={requestTemporaryTask}
         onSettings={setSettings}
@@ -988,7 +987,6 @@ function DetailView(props: {
   onMini: () => void;
   onCollapse: () => void;
   onQuit: () => void;
-  onAdmin: () => void;
   onAdd: () => void;
   onTemporary: () => void;
   onSettings: (settings: Settings) => void;
@@ -1004,7 +1002,7 @@ function DetailView(props: {
   return <section className="detail-shell">
     <header className="detail-header drag-surface">
       <div className="office-sign"><span><OfficeMark /></span><div><strong>clockout</strong><small>拖动的是完整任务，松手才保存排期</small></div></div>
-      <div className="header-actions no-drag"><button type="button" className="boss-entry" onClick={props.onAdmin}>管理后台</button><button type="button" onClick={props.onTemporary}>老板临时加单</button><button type="button" onClick={props.onAdd}>＋新增任务</button><WindowControls mode="detail" onMini={props.onMini} onBoard={props.onCollapse} onDetail={() => {}} onQuit={props.onQuit} /></div>
+      <div className="header-actions no-drag"><button type="button" onClick={props.onTemporary}>老板临时加单</button><button type="button" onClick={props.onAdd}>＋新增任务</button><WindowControls mode="detail" onMini={props.onMini} onBoard={props.onCollapse} onDetail={() => {}} onQuit={props.onQuit} /></div>
     </header>
     <div className="detail-grid schedule-detail-grid">
       <section className="pixel-panel ledger schedule-ledger">

@@ -2,7 +2,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktopWidget', {
   setMode: (mode) => ipcRenderer.invoke('window:set-mode', mode),
-  openAdmin: () => ipcRenderer.invoke('admin:open'),
   togglePin: () => ipcRenderer.invoke('window:toggle-pin'),
   updateTrayCountdown: (seconds) => ipcRenderer.invoke('tray:update-countdown', seconds),
   onModeChanged: (callback) => {
