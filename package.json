@@ -1,0 +1,28 @@
+{
+  "name": "clockout",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "clockout 桌宠式工作容量助手演示",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "build": "vite build && node scripts/sync-demo.mjs",
+    "start": "npm run build && electron .",
+    "dev": "vite --host 127.0.0.1",
+    "check": "tsc --noEmit && vite build",
+    "test:scheduler": "node --experimental-strip-types scripts/scheduler-tests.ts",
+    "test:windows": "node scripts/window-mode-tests.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "electron": "^44.0.0"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  }
+}

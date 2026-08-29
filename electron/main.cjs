@@ -1,0 +1,277 @@
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron');
+const fs = require('fs');
+const path = require('path');
+
+const MINI_SIZE = { width: 228, height: 60 };
+const BOARD_SIZE = { width: 520, height: 320 };
+const DETAIL_SIZE = { width: 1040, height: 720 };
+let mainWindow;
+let tray;
+let trayMenu;
+let saveTimer;
+let statePath;
+let isQuitting = false;
+let savedState = { miniBounds: null, boardBounds: null, detailBounds: null, pinned: true, mode: 'mini' };
+
+function readState() {
+  statePath = path.join(app.getPath('userData'), 'window-state.json');
+  try {
+    savedState = { ...savedState, ...JSON.parse(fs.readFileSync(statePath, 'utf8')) };
+  } catch (_) {}
+}
+
+function clampBounds(bounds) {
+  const display = screen.getDisplayMatching(bounds);
+  const area = display.workArea;
+  return {
+    x: Math.min(Math.max(bounds.x, area.x), area.x + area.width - bounds.width),
+    y: Math.min(Math.max(bounds.y, area.y), area.y + area.height - bounds.height),
+    width: Math.min(bounds.width, area.width),
+    height: Math.min(bounds.height, area.height)
+  };
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const bounds = mainWindow.getBounds();
+    if (savedState.mode === 'detail') savedState.detailBounds = bounds;
+    else if (savedState.mode === 'board') savedState.boardBounds = bounds;
+    else savedState.miniBounds = bounds;
+    fs.writeFileSync(statePath, JSON.stringify(savedState, null, 2));
+  }, 180);
+}
+
+function positionUnderTray() {
+  if (!mainWindow || !tray) return;
+  const trayBounds = tray.getBounds();
+  const current = mainWindow.getBounds();
+  const display = screen.getDisplayNearestPoint({
+    x: Math.round(trayBounds.x + trayBounds.width / 2),
+    y: Math.round(trayBounds.y + trayBounds.height)
+  });
+  const area = display.workArea;
+  const x = Math.round(trayBounds.x + trayBounds.width / 2 - current.width / 2);
+  const y = process.platform === 'darwin'
+    ? Math.round(trayBounds.y + trayBounds.height + 6)
+    : Math.round(area.y + 8);
+  mainWindow.setPosition(
+    Math.min(Math.max(x, area.x + 8), area.x + area.width - current.width - 8),
+    Math.min(Math.max(y, area.y + 8), area.y + area.height - current.height - 8),
+    false
+  );
+}
+
+function setWindowMode(requestedMode, showWindow = true) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const current = mainWindow.getBounds();
+  savedState.mode = requestedMode === 'detail' ? 'detail' : requestedMode === 'board' ? 'board' : 'mini';
+
+  if (savedState.mode === 'detail') {
+    mainWindow.setResizable(true);
+    mainWindow.setMaximumSize(1600, 1100);
+    mainWindow.setMinimumSize(820, 600);
+    const target = clampBounds(savedState.detailBounds || {
+      x: current.x + current.width - DETAIL_SIZE.width,
+      y: current.y,
+      ...DETAIL_SIZE
+    });
+    mainWindow.setBounds(target, true);
+  } else if (savedState.mode === 'board') {
+    mainWindow.setMinimumSize(BOARD_SIZE.width, BOARD_SIZE.height);
+    mainWindow.setMaximumSize(BOARD_SIZE.width, BOARD_SIZE.height);
+    const target = clampBounds(savedState.boardBounds || { x: current.x + current.width - BOARD_SIZE.width, y: current.y, ...BOARD_SIZE });
+    mainWindow.setBounds(target, true);
+    mainWindow.setResizable(false);
+  } else {
+    mainWindow.setMinimumSize(MINI_SIZE.width, MINI_SIZE.height);
+    mainWindow.setMaximumSize(MINI_SIZE.width, MINI_SIZE.height);
+    mainWindow.setBounds({ ...current, ...MINI_SIZE }, false);
+    mainWindow.setResizable(false);
+    positionUnderTray();
+  }
+
+  if (showWindow) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+  if (!mainWindow.webContents.isLoading()) mainWindow.webContents.send('window:mode-changed', savedState.mode);
+  scheduleSave();
+  return true;
+}
+
+function toggleTrayWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isVisible()) {
+    mainWindow.hide();
+    return;
+  }
+  setWindowMode('mini');
+}
+
+function formatTrayCountdown(totalSeconds) {
+  if (totalSeconds <= 0) return '下班';
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const hours = String(Math.floor(safe / 3600)).padStart(2, '0');
+  const minutes = String(Math.floor((safe % 3600) / 60)).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function updateTrayCountdown(totalSeconds) {
+  if (!tray) return false;
+  const label = formatTrayCountdown(Number(totalSeconds) || 0);
+  tray.setTitle(process.platform === 'darwin' ? ` ${label}` : '');
+  tray.setToolTip(`clockout · 距离下班 ${label}`);
+  return true;
+}
+
+function createTrayImage() {
+  const pixels = [
+    '0001111111111000',
+    '0010000000000100',
+    '0100000110000010',
+    '0100001111000010',
+    '0100011111100010',
+    '0100000110000010',
+    '0100000110000010',
+    '0100000000000010',
+    '0100000000000010',
+    '0100000110000010',
+    '0100000110000010',
+    '0100011111100010',
+    '0100001111000010',
+    '0100000110000010',
+    '0010000000000100',
+    '0001111111111000'
+  ];
+  const bitmap = Buffer.alloc(16 * 16 * 4);
+  pixels.forEach((row, y) => {
+    Array.from(row).forEach((pixel, x) => {
+      if (pixel !== '1') return;
+      const offset = (y * 16 + x) * 4;
+      bitmap[offset + 3] = 255;
+    });
+  });
+  const image = nativeImage.createFromBitmap(bitmap, { width: 16, height: 16, scaleFactor: 1 });
+  image.setTemplateImage(true);
+  return image;
+}
+
+function createTray() {
+  const trayImage = createTrayImage();
+  tray = new Tray(trayImage);
+  tray.setToolTip('clockout');
+  tray.on('click', toggleTrayWindow);
+  trayMenu = Menu.buildFromTemplate([
+    { label: '打开任务棋盘', click: () => setWindowMode('board') },
+    { label: '打开详细界面', click: () => setWindowMode('detail') },
+    { label: '显示／隐藏倒计时', click: toggleTrayWindow },
+    { type: 'separator' },
+    {
+      label: '退出 clockout',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+  tray.on('right-click', () => tray.popUpContextMenu(trayMenu));
+
+  const now = new Date();
+  const secondsUntilSix = Math.max(0, (18 * 60 - now.getHours() * 60 - now.getMinutes()) * 60 - now.getSeconds());
+  updateTrayCountdown(secondsUntilSix);
+  setTimeout(() => {
+    console.log('[status-bar]', JSON.stringify({ imageEmpty: trayImage.isEmpty(), bounds: tray.getBounds(), title: tray.getTitle() }));
+  }, 500);
+}
+
+function createWindow() {
+  readState();
+  const primary = screen.getPrimaryDisplay().workArea;
+  const initial = clampBounds(savedState.miniBounds || {
+    x: primary.x + primary.width - MINI_SIZE.width - 24,
+    y: primary.y + 8,
+    ...MINI_SIZE
+  });
+  savedState.mode = 'mini';
+
+  mainWindow = new BrowserWindow({
+    ...initial,
+    width: MINI_SIZE.width,
+    height: MINI_SIZE.height,
+    minWidth: MINI_SIZE.width,
+    minHeight: MINI_SIZE.height,
+    maxWidth: MINI_SIZE.width,
+    maxHeight: MINI_SIZE.height,
+    useContentSize: true,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    hasShadow: true,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  mainWindow.setAlwaysOnTop(true, 'floating');
+  mainWindow.on('move', scheduleSave);
+  mainWindow.on('resize', scheduleSave);
+  mainWindow.on('close', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    mainWindow.hide();
+  });
+
+  if (process.platform === 'darwin') {
+    app.dock.hide();
+    mainWindow.setWindowButtonVisibility(false);
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+}
+
+app.whenReady().then(() => {
+  createWindow();
+  createTray();
+  setWindowMode('mini');
+});
+app.on('before-quit', () => { isQuitting = true; });
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  else toggleTrayWindow();
+});
+
+ipcMain.handle('window:set-mode', (_event, requestedMode) => setWindowMode(requestedMode));
+
+ipcMain.handle('window:toggle-pin', () => {
+  if (!mainWindow) return false;
+  savedState.pinned = !mainWindow.isAlwaysOnTop();
+  mainWindow.setAlwaysOnTop(savedState.pinned, 'floating');
+  scheduleSave();
+  return savedState.pinned;
+});
+
+ipcMain.handle('tray:update-countdown', (_event, totalSeconds) => updateTrayCountdown(totalSeconds));
+ipcMain.on('app:quit', () => {
+  isQuitting = true;
+  app.quit();
+});
+
+ipcMain.on('window:hide-for', (_event, milliseconds) => {
+  if (!mainWindow) return;
+  mainWindow.hide();
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) setWindowMode('mini');
+  }, Math.max(1000, Math.min(milliseconds || 300000, 3600000)));
+});
+
+ipcMain.on('window:close', () => mainWindow && mainWindow.hide());
