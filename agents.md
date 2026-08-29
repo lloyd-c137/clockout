@@ -25,7 +25,7 @@
 - Keep motion restrained to roughly 150–250ms for movement, scale, and fade transitions.
 - Avoid dark neon dashboards, excessive borders, flashing, shaking, celebration effects, and decorative motion without feedback value.
 - The default experience is the small desktop widget; the detailed workbench is opened explicitly.
-- The boss management workspace should keep the same bright, calm visual language and remain usable from the detail workbench and tray menu.
+- The boss management workspace should keep the same bright, calm visual language and remain a standalone page entered from the tray menu; the employee workbench is read-only and must not expose management-related actions.
 
 ## Development commands
 

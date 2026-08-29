@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('desktopWidget', {
     return () => ipcRenderer.removeListener('window:mode-changed', listener);
   },
   loadTasks: () => ipcRenderer.invoke('tasks:list'),
+  hasAnyTasks: () => ipcRenderer.invoke('tasks:has-any'),
   saveTasks: (tasks) => ipcRenderer.invoke('tasks:save', tasks),
   deleteTask: (taskId) => ipcRenderer.invoke('tasks:delete', taskId),
   onTasksChanged: (callback) => {

@@ -60,6 +60,10 @@ function initializeTaskDb() {
       amount REAL NOT NULL,
       paid_at REAL NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
   try {
     taskDb.exec('ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
@@ -70,6 +74,21 @@ function initializeTaskDb() {
     taskDb.exec('ALTER TABLE tasks ADD COLUMN published INTEGER NOT NULL DEFAULT 1');
   } catch (error) {
     if (!String(error.message || error).includes('duplicate column name')) throw error;
+  }
+  const resetKey = taskDb.prepare('SELECT value FROM app_meta WHERE key = ?').get('initial_confirmation_reset_v1');
+  if (!resetKey) {
+    const now = Date.now();
+    taskDb.exec('BEGIN');
+    try {
+      taskDb.prepare('UPDATE tasks SET published = 0, updated_at = ?').run(now);
+      taskDb.prepare('DELETE FROM workday_controls').run();
+      taskDb.prepare('INSERT INTO app_meta (key, value) VALUES (?, ?)').run('initial_confirmation_reset_v1', String(now));
+      taskDb.exec('COMMIT');
+      console.log('[sqlite]', JSON.stringify({ initialConfirmationReset: true }));
+    } catch (error) {
+      taskDb.exec('ROLLBACK');
+      throw error;
+    }
   }
   console.log('[sqlite]', JSON.stringify({ path: dbPath, ready: true }));
 }
@@ -575,6 +594,7 @@ app.on('activate', () => {
 
 ipcMain.handle('window:set-mode', (_event, requestedMode) => setWindowMode(requestedMode));
 ipcMain.handle('tasks:list', () => listPublishedTasks());
+ipcMain.handle('tasks:has-any', () => listAllTasks().length > 0);
 ipcMain.handle('tasks:save', (_event, tasks) => {
   const saved = savePublishedTasks(tasks);
   broadcastTasks();

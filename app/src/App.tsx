@@ -203,12 +203,18 @@ export default function App() {
   useEffect(() => {
     if (!window.desktopWidget) return;
     let active = true;
-    void window.desktopWidget.loadTasks().then((tasks) => {
+    void Promise.all([
+      window.desktopWidget.loadTasks(),
+      window.desktopWidget.hasAnyTasks()
+    ]).then(([tasks, hasAnyTasks]) => {
       if (!active) return;
       if (tasks.length) {
         setCommittedSchedule(tasks);
         committedRef.current = tasks;
-      } else {
+      } else if (hasAnyTasks) {
+        setCommittedSchedule([]);
+        committedRef.current = [];
+      } else if (!hasAnyTasks) {
         void window.desktopWidget?.saveTasks(committedRef.current);
       }
       setDbReady(true);

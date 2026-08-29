@@ -10,6 +10,7 @@ declare global {
       updateTrayCountdown: (seconds: number) => Promise<boolean>;
       onModeChanged: (callback: (mode: 'mini' | 'board' | 'detail') => void) => () => void;
       loadTasks: () => Promise<import('./scheduler').ScheduleTask[]>;
+      hasAnyTasks: () => Promise<boolean>;
       saveTasks: (tasks: import('./scheduler').ScheduleTask[]) => Promise<import('./scheduler').ScheduleTask[]>;
       deleteTask: (taskId: string) => Promise<import('./scheduler').ScheduleTask[]>;
       onTasksChanged: (callback: (tasks: import('./scheduler').ScheduleTask[]) => void) => () => void;
