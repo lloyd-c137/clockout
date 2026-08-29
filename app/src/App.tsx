@@ -288,7 +288,6 @@ export default function App() {
   const todayWage = settings.hourlyWage * elapsedPaidMinutes / 60;
   const overtimeSlots = Math.max(0, committedPlan.totalSlots - BOARD_SLOTS);
   const isOvertime = overtimeSlots > 0;
-  const isAlmostOff = secondsUntilEnd > 0 && secondsUntilEnd <= 1800;
 
   useEffect(() => {
     if (window.desktopWidget) void window.desktopWidget.updateTrayCountdown(secondsUntilEnd);
@@ -600,9 +599,9 @@ export default function App() {
   }
 
   const miniWidget = (
-    <section className={'mini-clock-shell ' + (isAlmostOff || isOvertime ? 'almost-off' : '')} onDoubleClick={() => void switchMode('board')}>
+    <section className={'mini-clock-shell ' + (isOvertime ? 'almost-off' : '')} onDoubleClick={() => void switchMode('board')}>
       <span className="mini-drag-zone drag-surface" aria-hidden="true" />
-      <strong>{secondsUntilEnd <= 0 ? '可以走了' : formatCountdown(secondsUntilEnd)}</strong>
+      <AnimatedMoney value={todayWage} className="mini-wage" />
       <WindowControls mode="mini" onMini={() => void switchMode('mini')} onBoard={() => void switchMode('board')} onDetail={() => void switchMode('detail')} onQuit={quitApp} />
     </section>
   );

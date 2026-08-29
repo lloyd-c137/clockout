@@ -1273,6 +1273,15 @@ button { color: inherit; }
   font-variant-numeric: tabular-nums;
   -webkit-app-region: drag;
 }
+.mini-clock-shell > strong.money-value {
+  transform-origin: right center;
+  transition: transform 260ms cubic-bezier(.23, 1, .32, 1), opacity 180ms ease;
+  will-change: transform;
+}
+.mini-clock-shell > strong.money-value-updating {
+  transform: translateY(-2px) scale(1.04);
+  opacity: .9;
+}
 .mini-clock-shell.almost-off > strong { color: #ff9b67; }
 .mini-drag-zone {
   position: absolute;
@@ -1548,6 +1557,10 @@ button { color: inherit; }
 .schedule-detail-grid .schedule-rules p { font-size: 10px; }
 
 @media (prefers-reduced-motion: reduce) {
+  .mini-clock-shell > strong.money-value {
+    transition: none;
+    transform: none;
+  }
   .schedule-detail-grid .money-row strong {
     transition: none;
     transform: none;
