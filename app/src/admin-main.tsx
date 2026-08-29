@@ -72,9 +72,11 @@ function AdminApp() {
       if (!response.ok) throw new Error(`任务保存失败（${response.status}）`);
       setTasks(await response.json() as ScheduleTask[]);
       setError('');
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '任务保存失败');
       void refresh();
+      return false;
     }
   }, [refresh]);
 
@@ -90,8 +92,19 @@ function AdminApp() {
     }
   }, [refresh]);
 
-  const payAndPublish = useCallback(async () => {
-    const message = `确认支付 ¥${adminState.overageAmount.toFixed(2)} 超额费用，并发送 ${adminState.pendingMinutes} 分钟任务给员工吗？`;
+  const payAndPublish = useCallback(async (stateOverride?: AdminState) => {
+    let state = stateOverride || adminState;
+    if (!stateOverride) {
+      try {
+        state = await requestAdminState();
+        setAdminState(state);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : '管理状态读取失败');
+        return;
+      }
+    }
+    if (!state.pendingMinutes) return;
+    const message = `确认支付 ¥${state.overageAmount.toFixed(2)} 超额费用，并发送 ${state.pendingMinutes} 分钟任务给员工吗？`;
     if (!window.confirm(message)) return;
     try {
       const response = await fetch('/api/admin/pay-and-publish', { method: 'POST' });
@@ -102,7 +115,12 @@ function AdminApp() {
       setSuccess('');
       setError(cause instanceof Error ? cause.message : '支付失败');
     }
-  }, [adminState.overageAmount, adminState.pendingMinutes, refresh]);
+  }, [adminState, refresh]);
+
+  const addTask = useCallback(async (task: ScheduleTask) => {
+    const saved = await saveTasks([...tasksRef.current, { ...task, published: false }]);
+    if (saved && adminState.confirmedAt) await payAndPublish();
+  }, [adminState.confirmedAt, payAndPublish, saveTasks]);
 
   if (loading) return <div className="admin-loading"><strong>正在打开管理后台</strong><span>正在连接本机任务数据库</span></div>;
 
@@ -115,7 +133,7 @@ function AdminApp() {
       confirmedAt={adminState.confirmedAt}
       pendingMinutes={adminState.pendingMinutes}
       overageAmount={adminState.overageAmount}
-      onAdd={(task) => void saveTasks([...tasksRef.current, { ...task, published: false }])}
+      onAdd={addTask}
       onUpdate={(task) => void saveTasks(tasksRef.current.map((current) => current.id === task.id ? task : current))}
       onDelete={(taskId) => void saveTasks(tasksRef.current.filter((task) => task.id !== taskId))}
       onConfirm={() => void confirmTasks()}

@@ -833,7 +833,7 @@ export function AdminView(props: {
   confirmedAt: number | null;
   pendingMinutes: number;
   overageAmount: number;
-  onAdd: (task: ScheduleTask) => void;
+  onAdd: (task: ScheduleTask) => void | Promise<void>;
   onUpdate: (task: ScheduleTask) => void;
   onDelete: (id: string) => void;
   onConfirm: () => void;
@@ -845,6 +845,7 @@ export function AdminView(props: {
   const [dayFilter, setDayFilter] = useState<'all' | TaskDay>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<AdminDraft>(EMPTY_ADMIN_DRAFT);
+  const [submitting, setSubmitting] = useState(false);
   const selectedTask = props.tasks.find((task) => task.id === editingId) || null;
   const pendingTasks = props.tasks.filter((task) => task.published === false);
 
@@ -865,19 +866,26 @@ export function AdminView(props: {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!draft.title.trim()) return;
+    if (!draft.title.trim() || submitting) return;
     if (selectedTask) {
       props.onUpdate({ ...selectedTask, ...draft, title: draft.title.trim(), actualSlots: selectedTask.actualSlots || 0 });
+      setEditingId(null);
+      setDraft(EMPTY_ADMIN_DRAFT);
     } else {
-      props.onAdd(makeTask(draft.title.trim(), draft.durationSlots, draft.type, {
-        deadline: draft.deadline, day: draft.day, status: draft.status, assignee: draft.assignee.trim() || '员工',
-        priority: draft.priority, locked: draft.locked
-      }));
+      setSubmitting(true);
+      try {
+        await props.onAdd(makeTask(draft.title.trim(), draft.durationSlots, draft.type, {
+          deadline: draft.deadline, day: draft.day, status: draft.status, assignee: draft.assignee.trim() || '员工',
+          priority: draft.priority, locked: draft.locked
+        }));
+        setEditingId(null);
+        setDraft(EMPTY_ADMIN_DRAFT);
+      } finally {
+        setSubmitting(false);
+      }
     }
-    setEditingId(null);
-    setDraft(EMPTY_ADMIN_DRAFT);
   }
 
   function selectTask(task: ScheduleTask) {
@@ -899,15 +907,15 @@ export function AdminView(props: {
     </header>
     <div className="admin-body">
       <aside className="admin-intake pixel-panel">
-        <div className="admin-section-heading"><div><span className="section-kicker">任务入口</span><h2>{selectedTask ? '编辑任务' : '新增任务'}</h2></div>{selectedTask && <button type="button" className="text-button" onClick={() => { setEditingId(null); setDraft(EMPTY_ADMIN_DRAFT); }}>新建</button>}</div>
+        <div className="admin-section-heading"><div><span className="section-kicker">任务入口</span><h2>{selectedTask ? '编辑任务' : props.confirmedAt ? '超额任务' : '新增任务'}</h2></div>{selectedTask && <button type="button" className="text-button" onClick={() => { setEditingId(null); setDraft(EMPTY_ADMIN_DRAFT); }}>新建</button>}</div>
         <form className="admin-form" onSubmit={submit}>
           <label>任务名称<input value={draft.title} onChange={(event) => updateDraft('title', event.target.value)} placeholder="例如：准备客户演示" /></label>
           <div className="admin-form-grid"><label>类型<select value={draft.type} onChange={(event) => updateDraft('type', event.target.value as TaskType)}>{Object.entries(TYPE_META).map(([value, meta]) => <option value={value} key={value}>{meta.label}</option>)}</select></label><label>时长<select value={draft.durationSlots} onChange={(event) => updateDraft('durationSlots', Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => index + 1).map((slots) => <option value={slots} key={slots}>{slots * 15}分钟</option>)}</select></label></div>
           <div className="admin-form-grid"><label>安排日期<select value={draft.day} onChange={(event) => updateDraft('day', event.target.value as TaskDay)}><option value="today">今天</option><option value="tomorrow">明天</option></select></label><label>截止时间<input type="time" value={draft.deadline} onChange={(event) => updateDraft('deadline', event.target.value)} /></label></div>
           <div className="admin-form-grid"><label>负责人<input value={draft.assignee} onChange={(event) => updateDraft('assignee', event.target.value)} placeholder="员工" /></label><label>优先级<select value={draft.priority} onChange={(event) => updateDraft('priority', Number(event.target.value))}>{[1, 2, 3, 4, 5].map((priority) => <option value={priority} key={priority}>{priority} · {priority <= 2 ? '高' : priority === 3 ? '中' : '低'}</option>)}</select></label></div>
           {selectedTask && <div className="admin-form-grid"><label>状态<select value={draft.status} onChange={(event) => updateDraft('status', event.target.value as TaskStatus)}><option value="todo">待处理</option><option value="doing">进行中</option><option value="done">已完成</option></select></label><label className="admin-check"><input type="checkbox" checked={draft.locked} onChange={(event) => updateDraft('locked', event.target.checked)} />锁定时间</label></div>}
-          <p className="admin-form-note">今天安排共 {todayMinutes} 分钟，棋盘剩余 {Math.max(0, 36 - todayPlan.totalSlots)} 格{todayPlan.overflowSlots ? '，当前已超出容量' : ''}。{props.confirmedAt ? '今日已确认，新增任务需支付超额费用后发送。' : '点击确认发送前，员工不会看到待确认任务。'}</p>
-          <button className="admin-submit" type="submit">{selectedTask ? '保存任务' : '加入排期'}</button>
+          <p className="admin-form-note">今天安排共 {todayMinutes} 分钟，棋盘剩余 {Math.max(0, 36 - todayPlan.totalSlots)} 格{todayPlan.overflowSlots ? '，当前已超出容量' : ''}。{props.confirmedAt ? '新增任务会作为超额任务，点击下方按钮后需支付超额费用，支付成功才会发送给员工。' : '点击确认发送前，员工不会看到待确认任务。'}</p>
+          <button className="admin-submit" type="submit" disabled={submitting}>{selectedTask ? '保存任务' : props.confirmedAt ? '添加超额任务并支付' : '加入排期'}</button>
           {selectedTask && <button className="admin-delete" type="button" onClick={deleteSelected}>删除任务</button>}
         </form>
       </aside>
