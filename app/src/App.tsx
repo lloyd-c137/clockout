@@ -880,7 +880,6 @@ export function AdminView(props: {
   confirmedAt: number | null;
   pendingMinutes: number;
   overageAmount: number;
-  onBack: () => void;
   onAdd: (task: ScheduleTask) => void;
   onUpdate: (task: ScheduleTask) => void;
   onDelete: (id: string) => void;
@@ -943,7 +942,7 @@ export function AdminView(props: {
   return <section className="admin-shell">
     <header className="admin-header drag-surface">
       <div className="admin-brand"><span className="admin-brand-mark"><OfficeMark /></span><div><strong>clockout · 管理后台</strong><small>把新增工作放进容量里，再决定谁来做、何时做</small></div></div>
-      <div className="admin-header-actions no-drag">{pendingTasks.length > 0 && <button type="button" className={props.confirmedAt ? 'admin-pay' : 'admin-confirm'} onClick={props.confirmedAt ? props.onPayAndPublish : props.onConfirm}>{props.confirmedAt ? `支付 ¥${props.overageAmount.toFixed(2)} 并发送` : `确认发送 ${pendingTasks.length} 项`}</button>}<button type="button" onClick={props.onBack}>回到工作台</button>{props.onQuit && <button type="button" className="admin-quit" onClick={props.onQuit}>退出</button>}</div>
+      <div className="admin-header-actions no-drag">{pendingTasks.length > 0 && <button type="button" className={props.confirmedAt ? 'admin-pay' : 'admin-confirm'} onClick={props.confirmedAt ? props.onPayAndPublish : props.onConfirm}>{props.confirmedAt ? `支付 ¥${props.overageAmount.toFixed(2)} 并发送` : `确认发送 ${pendingTasks.length} 项`}</button>}{props.onQuit && <button type="button" className="admin-quit" onClick={props.onQuit}>退出</button>}</div>
     </header>
     <div className="admin-body">
       <aside className="admin-intake pixel-panel">

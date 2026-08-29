@@ -103,7 +103,6 @@ function AdminApp() {
       confirmedAt={adminState.confirmedAt}
       pendingMinutes={adminState.pendingMinutes}
       overageAmount={adminState.overageAmount}
-      onBack={() => window.location.assign('/')}
       onAdd={(task) => void saveTasks([...tasksRef.current, { ...task, published: false }])}
       onUpdate={(task) => void saveTasks(tasksRef.current.map((current) => current.id === task.id ? task : current))}
       onDelete={(taskId) => void saveTasks(tasksRef.current.filter((task) => task.id !== taskId))}
