@@ -1592,6 +1592,50 @@ button { color: inherit; }
   box-shadow: inset 0 -4px 0 rgba(92,69,24,.18);
 }
 
+/* Reference palette: sky blue, parchment, warm wood, and saturated game pieces. */
+.web-stage { background-color: #58b4ee; }
+.kind-normal { --task-color: #2169d1; }
+.kind-meeting { --task-color: #f2a90e; }
+.kind-ai { --task-color: #4fbd20; }
+.kind-urgent { --task-color: #e84228; }
+.kind-waiting { --task-color: #9fb4c8; }
+.kind-boss { --task-color: #6d40bf; }
+.kind-temporary { --task-color: #9b55d1; }
+.widget-shell { background: #f5e1af; box-shadow: 7px 7px 0 rgba(101,53,30,.28), inset 0 0 0 2px #a86139; color: #432719; }
+.tetris-board-widget { background: #f5e1af; box-shadow: inset 0 0 0 3px #774125, inset 0 -8px 0 rgba(104,58,29,.14); color: #432719; }
+.board-widget-top { background: #87502f; color: #fff0c9; }
+.board-score-column { border-left-color: #d7a746; }
+.detail-shell { background: #f5e1af; box-shadow: inset 0 0 0 3px #774125; }
+.detail-header { background: #87502f; color: #fff0c9; box-shadow: inset 0 -4px 0 rgba(75,37,20,.25); }
+.detail-header::after { background: linear-gradient(90deg, #f0b629 0 14px, transparent 14px 18px, #49a925 18px 32px, transparent 32px 36px, #e95a3d 36px 50px); }
+.office-sign > span { background: #f0b629; color: #4d2b1c; box-shadow: 2px 3px 0 #6d3b24; }
+.detail-header .window-controls button:nth-child(1) { background: #f0b629; color: #4d2b1c; }
+.detail-header .window-controls button:nth-child(2) { background: #49a925; color: #fff8d8; }
+.detail-header .window-controls button:last-child { background: #e95a3d; color: #fff8d8; }
+.pixel-panel { background: #f9e8ba; box-shadow: inset 0 0 0 2px rgba(119,65,37,.32); }
+.ledger-row { background: #fff1c9; box-shadow: inset 0 -2px 0 rgba(119,65,37,.14); }
+.task-board.schedule-board,
+.detail-board-panel .task-board.schedule-board {
+  background: #dceaf2;
+  box-shadow: inset 0 0 0 3px #5f7891, inset 0 0 0 5px #aec4d4;
+}
+.board-slot-base { background: #b8c9d8; box-shadow: inset 1px 1px 0 rgba(255,255,255,.68), inset -1px -1px 0 rgba(57,82,105,.2); }
+.board-slot-base.past-slot { background: #a9bac9; }
+.task-piece-layer .board-cell::before { border-color: rgba(255,255,255,.28); }
+.task-piece-layer .kind-normal { --task-color: #2169d1; }
+.task-piece-layer .kind-meeting { --task-color: #f2a90e; }
+.task-piece-layer .kind-ai { --task-color: #4fbd20; }
+.task-piece-layer .kind-urgent { --task-color: #e84228; }
+.task-piece-layer .kind-waiting { --task-color: #9fb4c8; }
+.task-piece-layer .kind-boss { --task-color: #6d40bf; }
+.task-piece-layer .kind-temporary { --task-color: #9b55d1; }
+.elapsed-water { background: rgba(255,255,255,.16); }
+.water-wave path { stroke: #d48e24; }
+.clock-marker { background: #f0b629; color: #4d2b1c; box-shadow: 2px 2px 0 rgba(83,43,24,.35); }
+.schedule-detail-grid .money-row-primary strong { color: #e84b28; }
+.schedule-detail-grid .money-row.extra { background: rgba(50,126,220,.1); box-shadow: inset 3px 0 0 #2f76d7; }
+.schedule-detail-grid .money-row.extra strong { color: #2169d1; }
+
 @media (max-width: 900px) {
   .board-widget-layout { grid-template-columns: 270px 1fr; }
 }
